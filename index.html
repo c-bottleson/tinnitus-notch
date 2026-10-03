@@ -1,0 +1,1591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0d1117" />
+  <meta name="description" content="Notch therapy educational audio tool. Find a tinnitus pitch from 1 kHz to 20 kHz, then play half-octave notched noise around that pitch. Not a medical device." />
+  <title>Notch Therapy — Ideator Prototype</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --bg-elev: #161b22;
+      --bg-soft: #1c2330;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --accent-dim: #1f6feb;
+      --ok: #3fb950;
+      --warn: #d29922;
+      --danger: #f85149;
+      --radius: 12px;
+      --shadow: 0 8px 24px rgba(0,0,0,.35);
+      --font: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; min-height: 100%; }
+    body {
+      font-family: var(--font);
+      background: radial-gradient(1200px 600px at 50% -10%, #1a2332 0%, var(--bg) 55%);
+      color: var(--text);
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .wrap {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 1.25rem 1rem 3rem;
+    }
+
+    header.app-header {
+      text-align: center;
+      margin-bottom: 1.25rem;
+    }
+    header.app-header h1 {
+      font-size: 1.45rem;
+      font-weight: 650;
+      letter-spacing: -0.02em;
+      margin: 0 0 .35rem;
+    }
+    header.app-header .tag {
+      color: var(--muted);
+      font-size: .85rem;
+    }
+
+    .banner {
+      background: #1a1208;
+      border: 1px solid #5c3d12;
+      color: #f0c674;
+      border-radius: var(--radius);
+      padding: 1rem 1.1rem;
+      margin-bottom: 1.25rem;
+      font-size: .88rem;
+      box-shadow: var(--shadow);
+    }
+    .banner strong { color: #ffd98a; }
+    .banner ul { margin: .5rem 0 0; padding-left: 1.15rem; }
+    .banner li { margin: .25rem 0; }
+    .banner .accept {
+      display: flex;
+      align-items: flex-start;
+      gap: .55rem;
+      margin-top: .85rem;
+      cursor: pointer;
+      user-select: none;
+    }
+    .banner input[type="checkbox"] {
+      margin-top: .2rem;
+      width: 1.05rem;
+      height: 1.05rem;
+      accent-color: var(--warn);
+      flex-shrink: 0;
+    }
+
+    .steps {
+      display: flex;
+      gap: .5rem;
+      margin-bottom: 1rem;
+    }
+    .step-pill {
+      flex: 1;
+      text-align: center;
+      padding: .55rem .4rem;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--bg-elev);
+      color: var(--muted);
+      font-size: .8rem;
+      font-weight: 600;
+    }
+    .step-pill.active {
+      color: var(--text);
+      border-color: var(--accent-dim);
+      background: linear-gradient(180deg, #1c2a40, var(--bg-elev));
+      box-shadow: inset 0 0 0 1px rgba(88,166,255,.25);
+    }
+    .step-pill.done { color: var(--ok); border-color: #238636; }
+
+    .card {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.15rem 1.2rem 1.25rem;
+      margin-bottom: 1rem;
+      box-shadow: var(--shadow);
+    }
+    .card h2 {
+      margin: 0 0 .35rem;
+      font-size: 1.05rem;
+      font-weight: 650;
+    }
+    .card .hint {
+      color: var(--muted);
+      font-size: .82rem;
+      margin: 0 0 1rem;
+    }
+
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .6rem;
+      align-items: center;
+      margin-bottom: .85rem;
+    }
+    .row:last-child { margin-bottom: 0; }
+    .row.equal .btn { flex: 1; }
+
+    label.field {
+      display: block;
+      width: 100%;
+      margin-bottom: .9rem;
+    }
+    label.field > span.label {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: .75rem;
+      font-size: .82rem;
+      color: var(--muted);
+      margin-bottom: .35rem;
+    }
+    label.field > span.label .val {
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+      font-weight: 600;
+      text-align: right;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+      height: 1.4rem;
+      cursor: pointer;
+    }
+
+    .btn {
+      appearance: none;
+      border: 1px solid var(--border);
+      background: var(--bg-soft);
+      color: var(--text);
+      border-radius: 10px;
+      padding: .55rem .9rem;
+      font-size: .9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s, border-color .15s, transform .08s;
+    }
+    .btn:hover { background: #243044; border-color: #485668; }
+    .btn:active { transform: translateY(1px); }
+    .btn:disabled {
+      opacity: .45;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .btn.primary {
+      background: linear-gradient(180deg, #2a6fd6, var(--accent-dim));
+      border-color: #388bfd;
+      color: #fff;
+    }
+    .btn.primary:hover { background: linear-gradient(180deg, #3a7fe6, #2a6fd6); }
+    .btn.danger {
+      background: #3d1515;
+      border-color: #8b2e2e;
+      color: #ffb4b0;
+    }
+    .btn.danger:hover { background: #4d1c1c; }
+    .btn.ghost { background: transparent; }
+    .btn.sm { padding: .4rem .65rem; font-size: .8rem; }
+    .btn.block { width: 100%; }
+
+    .freq-display {
+      text-align: center;
+      font-size: 1.75rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.02em;
+      margin: .25rem 0 .9rem;
+      color: var(--accent);
+    }
+    .freq-display small {
+      display: block;
+      font-size: .75rem;
+      font-weight: 500;
+      color: var(--muted);
+      margin-top: .15rem;
+      letter-spacing: 0;
+      line-height: 1.35;
+    }
+
+    .seg {
+      display: inline-flex;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      background: var(--bg);
+    }
+    .seg button {
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      padding: .45rem .75rem;
+      font-size: .82rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .seg button + button { border-left: 1px solid var(--border); }
+    .seg button.active {
+      background: #1f3a5f;
+      color: var(--text);
+    }
+
+    .status {
+      display: flex;
+      align-items: flex-start;
+      gap: .5rem;
+      font-size: .82rem;
+      color: var(--muted);
+      margin-top: .75rem;
+    }
+    .dot {
+      width: .55rem;
+      height: .55rem;
+      border-radius: 50%;
+      background: var(--border);
+      flex-shrink: 0;
+      margin-top: .3rem;
+    }
+    .dot.on { background: var(--ok); box-shadow: 0 0 8px rgba(63,185,80,.6); }
+    .dot.warn { background: var(--warn); }
+
+    .plan {
+      font-size: .8rem;
+      color: var(--muted);
+      background: #0d1117;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: .7rem .8rem;
+      margin: 0 0 1rem;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.4;
+    }
+    .plan strong { color: var(--text); font-weight: 650; }
+    .plan .warn { color: var(--warn); }
+
+    .notch-viz {
+      width: 100%;
+      height: 92px;
+      border-radius: 8px;
+      background: #0a0e14;
+      border: 1px solid var(--border);
+      margin: .25rem 0 1rem;
+      display: block;
+    }
+
+    .timer-big {
+      font-size: 1.6rem;
+      font-variant-numeric: tabular-nums;
+      font-weight: 650;
+      text-align: center;
+      margin: .4rem 0 .8rem;
+      color: var(--text);
+    }
+
+    footer.foot {
+      text-align: center;
+      color: var(--muted);
+      font-size: .75rem;
+      margin-top: 1.5rem;
+      padding: 0 .5rem;
+    }
+
+    .nav-row {
+      display: flex;
+      gap: .6rem;
+      margin-top: .5rem;
+    }
+    .nav-row .btn { flex: 1; }
+
+    @media (max-width: 420px) {
+      .freq-display { font-size: 1.45rem; }
+      .btn { padding: .5rem .7rem; font-size: .85rem; }
+      .seg button { padding: .45rem .5rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="app-header">
+      <h1>Notch Therapy</h1>
+      <div class="tag">Educational / self-help audio tool · OldBranch / Ideator Prototype</div>
+    </header>
+
+    <section class="banner" id="disclaimer" role="note" aria-label="Important safety disclaimer">
+      <strong>Important — not a medical device</strong>
+      <ul>
+        <li>This is an educational prototype, not a cure, diagnosis, or medical advice.</li>
+        <li>Consult an audiologist or ENT for tinnitus evaluation and treatment.</li>
+        <li>Start at a quiet volume. Prefer headphones at a comfortable level.</li>
+        <li><strong>Stop immediately</strong> if you feel pain, dizziness, or your tinnitus worsens.</li>
+        <li>Never use at volumes that could damage hearing. Safe listening first.</li>
+      </ul>
+      <label class="accept">
+        <input type="checkbox" id="acceptDisclaimer" />
+        <span>I understand this is not medical advice and I will keep volume safe.</span>
+      </label>
+    </section>
+
+    <div class="steps" aria-hidden="true">
+      <div class="step-pill active" id="pill1">1 · Find pitch</div>
+      <div class="step-pill" id="pill2">2 · Therapy</div>
+    </div>
+
+    <section class="card" id="step1" aria-labelledby="step1-title">
+      <h2 id="step1-title">Step 1 — Find the pitch</h2>
+      <p class="hint">Finding the pitch and moving the therapy notch are two different jobs. This step only searches. It starts as a half-octave band of noise centered near 15 kHz, where you think the tinnitus sits. Step down and step up move that whole band so the next one starts exactly where the last one ended — no overlap. Narrow tightens the width in steps: half an octave, then a quarter, an eighth, then one semitone. Widen goes back up, and it will not go wider than half an octave. At one semitone you hear a single tone instead of noise. The center slider runs from 1 kHz through 20 kHz. Match at a quiet volume. This is not a medical device.</p>
+
+      <div class="freq-display" id="searchDisplay" aria-live="polite">
+        15,000 Hz
+        <small>12,613–17,838 Hz · 1/2 octave · 5,225 Hz wide · noise band</small>
+      </div>
+
+      <label class="field">
+        <span class="label"><span>Search center</span><span class="val" id="searchCenterLabel">15,000 Hz</span></span>
+        <input type="range" id="searchCenter" min="0" max="100000" step="1" value="90397" aria-label="Search center, 1 kHz to 20 kHz" />
+      </label>
+
+      <label class="field">
+        <span class="label"><span>Search volume</span><span class="val" id="searchVolLabel">15%</span></span>
+        <input type="range" id="searchVol" min="0" max="40" step="1" value="15" aria-label="Search volume" />
+      </label>
+
+      <div class="row equal">
+        <button type="button" class="btn" id="btnStepDown" title="Move down by one search band">Step down</button>
+        <button type="button" class="btn" id="btnStepUp" title="Move up by one search band">Step up</button>
+      </div>
+      <div class="row equal">
+        <button type="button" class="btn" id="btnNarrow" title="Narrow the search width one step">Narrow</button>
+        <button type="button" class="btn" id="btnWiden" title="Widen the search width one step">Widen</button>
+      </div>
+      <div class="row">
+        <span style="font-size:.82rem;color:var(--muted)">Width</span>
+        <div class="seg" id="widthSeg" role="group" aria-label="Search width">
+          <button type="button" class="active" data-w="0">1/2</button>
+          <button type="button" data-w="1">1/4</button>
+          <button type="button" data-w="2">1/8</button>
+          <button type="button" data-w="3">1 note</button>
+        </div>
+      </div>
+
+      <div class="row">
+        <button type="button" class="btn primary" id="btnSearchPlay">Play band</button>
+        <button type="button" class="btn" id="btnSearchStop" disabled>Stop</button>
+        <button type="button" class="btn ghost" id="btnLockFreq">Lock this pitch →</button>
+      </div>
+
+      <div class="status">
+        <span class="dot" id="searchDot"></span>
+        <span id="searchStatus" role="status">Accept the disclaimer to enable audio</span>
+      </div>
+    </section>
+
+    <section class="card" id="step2" aria-labelledby="step2-title">
+      <h2 id="step2-title">Step 2 — Notched noise therapy</h2>
+      <p class="hint">When you lock a pitch, the notch is centered on that frequency. You do not set a separate low and high band. Each slice is a hard notch half an octave wide. Playback starts two slices below the locked pitch and walks upward, edge to edge with no overlap: two below, the center, and two above. About 30 seconds on each slice, then it loops. A slice is left out only when its top edge is too high for this device to play (or the slice sits entirely below 1 kHz). The status says so. This is not a medical device or a treatment. Keep the volume low, and stop if it hurts or the tinnitus gets worse.</p>
+
+      <canvas class="notch-viz" id="notchViz" width="680" height="92" aria-label="Notch slices across 1 kHz to 20 kHz"></canvas>
+
+      <label class="field">
+        <span class="label"><span>Locked notch center</span><span class="val" id="notchFreqLabel">15,000 Hz</span></span>
+        <input type="range" id="notchFreq" min="0" max="100000" step="1" value="90397" aria-label="Notch center, 1 kHz to 20 kHz" />
+      </label>
+
+      <div class="plan" id="slicePlan"></div>
+
+      <label class="field">
+        <span class="label"><span>Therapy volume</span><span class="val" id="noiseVolLabel">20%</span></span>
+        <input type="range" id="noiseVol" min="0" max="50" step="1" value="20" aria-label="Therapy volume" />
+      </label>
+
+      <div class="row">
+        <span style="font-size:.82rem;color:var(--muted)">Noise color</span>
+        <div class="seg" role="group" aria-label="Noise color">
+          <button type="button" class="active" id="noiseWhite" data-color="white">White</button>
+          <button type="button" id="noisePink" data-color="pink">Pink</button>
+        </div>
+      </div>
+
+      <div class="row">
+        <span style="font-size:.82rem;color:var(--muted)">Session</span>
+        <div class="seg" role="group" aria-label="Session duration">
+          <button type="button" class="active" data-mins="0" id="timerOff">Off</button>
+          <button type="button" data-mins="15">15m</button>
+          <button type="button" data-mins="30">30m</button>
+          <button type="button" data-mins="45">45m</button>
+          <button type="button" data-mins="60">60m</button>
+        </div>
+      </div>
+
+      <div class="timer-big" id="timerDisplay" hidden>00:00</div>
+
+      <div class="row">
+        <button type="button" class="btn primary" id="btnNoisePlay">Play notched noise</button>
+        <button type="button" class="btn danger" id="btnNoiseStop" disabled>Stop</button>
+      </div>
+
+      <div class="status">
+        <span class="dot" id="noiseDot"></span>
+        <span id="noiseStatus" role="status">Therapy idle</span>
+      </div>
+    </section>
+
+    <footer class="foot">
+      Not a medical device · Settings saved in this browser · Web Audio API · Prototype for Nick
+    </footer>
+  </div>
+
+  <script>
+(function () {
+  'use strict';
+
+  const STORAGE_KEY = 'notch-therapy-v2';
+  const BIQUAD_Q = 0.7071;
+  const DWELL_MS = 30000;
+  const STEP_TAU = 0.13;
+  const SLIDER_TAU = 0.04;
+  const SLIDER_MAX = 100000;
+
+  // PURE_START
+  var FREQ_MIN = 1000;
+  var FREQ_MAX = 20000;
+  var DEFAULT_CENTER = 15000;
+  var THERAPY_W = 0.5;
+  var NYQUIST_MARGIN = 200;
+  var WIDTH_LADDER = [1 / 2, 1 / 4, 1 / 8, 1 / 12];
+
+  function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
+
+  function bandEdges(center, widthOct) {
+    var half = Math.pow(2, widthOct / 2);
+    var lo = center / half;
+    var hi = center * half;
+    return { lo: lo, hi: hi, widthHz: hi - lo, widthOct: widthOct };
+  }
+
+  function stepCenter(center, widthOct, dir) {
+    var next = center * Math.pow(2, dir * widthOct);
+    if (next < FREQ_MIN) return FREQ_MIN;
+    if (next > FREQ_MAX) return FREQ_MAX;
+    return next;
+  }
+
+  function widthIndexOf(widthOct) {
+    var i = 0;
+    for (var n = 0; n < WIDTH_LADDER.length; n++) {
+      if (Math.abs(WIDTH_LADDER[n] - widthOct) < 1e-12) i = n;
+    }
+    return i;
+  }
+
+  function narrower(widthOct) {
+    var i = widthIndexOf(widthOct);
+    return WIDTH_LADDER[Math.min(WIDTH_LADDER.length - 1, i + 1)];
+  }
+
+  function wider(widthOct) {
+    var i = widthIndexOf(widthOct);
+    return WIDTH_LADDER[Math.max(0, i - 1)];
+  }
+
+  function playableHiMax(sampleRate) {
+    return sampleRate / 2 - NYQUIST_MARGIN;
+  }
+
+  // Five slice centers: f * 2^(-2w), 2^(-w), 1, 2^(w), 2^(2w).
+  // With w = 0.5 the hop is sqrt(2), not an octave. Edges abut:
+  // next lo = previous hi. A slice is dropped only when its top edge
+  // is above Nyquist minus a small margin, or the whole slice is below 1 kHz.
+  function therapyPlan(center, sampleRate, widthOct) {
+    var w = (widthOct == null) ? THERAPY_W : widthOct;
+    var maxHi = playableHiMax(sampleRate);
+    var slices = [];
+    var skipped = [];
+    var limitedUp = false;
+    var limitedDown = false;
+    for (var k = -2; k <= 2; k++) {
+      var c = center * Math.pow(2, k * w);
+      var edges = bandEdges(c, w);
+      var rec = { k: k, center: c, lo: edges.lo, hi: edges.hi };
+      if (!(edges.hi > edges.lo) || edges.hi > maxHi) {
+        limitedUp = true;
+        rec.reason = 'speaker';
+        skipped.push(rec);
+      } else if (edges.hi < FREQ_MIN) {
+        limitedDown = true;
+        rec.reason = 'below-1k';
+        skipped.push(rec);
+      } else {
+        slices.push(rec);
+      }
+    }
+    return {
+      slices: slices,
+      skipped: skipped,
+      limitedUp: limitedUp,
+      limitedDown: limitedDown,
+      maxHi: maxHi,
+      sampleRate: sampleRate
+    };
+  }
+  // PURE_END
+
+  const WIDTH_NAME = ['1/2 octave', '1/4 octave', '1/8 octave', '1 semitone (1/12 octave)'];
+
+  const $ = (id) => document.getElementById(id);
+  const acceptEl = $('acceptDisclaimer');
+  const searchSlider = $('searchCenter');
+  const searchVolEl = $('searchVol');
+  const notchSlider = $('notchFreq');
+  const noiseVolEl = $('noiseVol');
+  const canvas = $('notchViz');
+  const ctx2d = canvas.getContext('2d');
+
+  let audioCtx = null;
+  let searchCenter = DEFAULT_CENTER;
+  let searchWidthIndex = 0;
+  let notchCenter = DEFAULT_CENTER;
+  let plan = therapyPlan(DEFAULT_CENTER, 48000, THERAPY_W);
+  plan.preview = true;
+
+  let searchOsc = null;
+  let searchSource = null;
+  let searchGain = null;
+  let searchHp = [];
+  let searchLp = [];
+  let searchOn = false;
+  let searchGen = 0;
+  let searchAudible = null;
+
+  let noiseSource = null;
+  let noiseGain = null;
+  let lpFilters = [];
+  let hpFilters = [];
+  let sumGain = null;
+  let shelfFilter = null;
+  let noiseColor = 'white';
+  let noiseGen = 0;
+  let fadeToken = 0;
+  let stepperActive = false;
+  let stepSlices = [];
+  let stepIndex = 0;
+  let stepTimer = null;
+  let stepDeadline = 0;
+  let stepRemainMs = DWELL_MS;
+  let notchDragging = false;
+  let dragOrigin = DEFAULT_CENTER;
+  let sessionMinutes = 0;
+  let sessionEndsAt = 0;
+  let timerRaf = null;
+  let softFadeActive = false;
+  let accepted = false;
+
+  function formatHz(hz) {
+    var n = Math.round(hz);
+    var s = String(Math.abs(n));
+    var out = '';
+    for (var i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 === 0) out += ',';
+      out += s.charAt(i);
+    }
+    return (n < 0 ? '-' : '') + out + ' Hz';
+  }
+
+  function freqToSlider(freq) {
+    var f = clamp(freq, FREQ_MIN, FREQ_MAX);
+    var t = Math.log(f / FREQ_MIN) / Math.log(FREQ_MAX / FREQ_MIN);
+    return Math.round(t * SLIDER_MAX);
+  }
+
+  function sliderToFreq(v) {
+    var t = clamp(+v, 0, SLIDER_MAX) / SLIDER_MAX;
+    return FREQ_MIN * Math.pow(FREQ_MAX / FREQ_MIN, t);
+  }
+
+  function currentWidth() {
+    return WIDTH_LADDER[searchWidthIndex];
+  }
+
+  function isSemitone() {
+    return searchWidthIndex === WIDTH_LADDER.length - 1;
+  }
+
+  function placeName(k) {
+    if (k === 0) return 'center';
+    if (k === -1) return 'one below';
+    if (k === -2) return 'two below';
+    if (k === 1) return 'one above';
+    if (k === 2) return 'two above';
+    return '';
+  }
+
+  function pushSliders() {
+    searchSlider.value = String(freqToSlider(searchCenter));
+    notchSlider.value = String(freqToSlider(notchCenter));
+  }
+
+  function refreshPlan() {
+    var sr = (audioCtx && audioCtx.sampleRate) ? audioCtx.sampleRate : 48000;
+    plan = therapyPlan(notchCenter, sr, THERAPY_W);
+    plan.preview = !(audioCtx && audioCtx.sampleRate);
+  }
+
+  function searchEdgeText() {
+    var e = bandEdges(searchCenter, currentWidth());
+    var kind = isSemitone() ? 'pure tone' : 'noise band';
+    return Math.round(e.lo) + '\u2013' + Math.round(e.hi) + ' Hz · ' +
+      WIDTH_NAME[searchWidthIndex] + ' · ' +
+      Math.round(e.widthHz) + ' Hz wide · ' + kind;
+  }
+
+  function sliceBrief(s) {
+    return formatHz(s.center) + ' (' + Math.round(s.lo) + '\u2013' + Math.round(s.hi) + ', ' + placeName(s.k) + ')';
+  }
+
+  function planHtml() {
+    if (!plan.slices.length) {
+      return '<strong>No slice fits.</strong> Every half-octave slice around ' + formatHz(notchCenter) +
+        ' is outside what this speaker can play.';
+    }
+    var head = plan.preview
+      ? 'Preview assuming a 48 kHz device. The real speaker limit is applied when audio starts. '
+      : 'This device is ' + plan.sampleRate + ' Hz. ';
+    var body = plan.slices.length + ' slice' + (plan.slices.length === 1 ? '' : 's') +
+      ', lowest first: ' + plan.slices.map(sliceBrief).join(' · ') + '.';
+    var notes = '';
+    if (plan.limitedUp) notes += ' <span class="warn">Up limited by speaker range.</span>';
+    if (plan.limitedDown) notes += ' <span class="warn">Down limited by the 1 kHz floor.</span>';
+    if (!plan.slices.some(function (s) { return s.k === 0; })) {
+      notes += ' <span class="warn">The slice on the locked pitch itself does not fit this speaker.</span>';
+    }
+    if (plan.skipped.length) {
+      notes += ' Skipped: ' + plan.skipped.map(function (s) {
+        return formatHz(s.center);
+      }).join(', ') + '.';
+    }
+    return head + body + notes;
+  }
+
+  function updateLabels() {
+    var e = bandEdges(searchCenter, currentWidth());
+    $('searchCenterLabel').textContent = formatHz(searchCenter);
+    $('searchDisplay').innerHTML = formatHz(searchCenter) + '<small>' + searchEdgeText() + '</small>';
+    searchSlider.setAttribute('aria-valuetext', Math.round(searchCenter) + ' hertz');
+    $('searchVolLabel').textContent = searchVolEl.value + '%';
+    $('notchFreqLabel').textContent = formatHz(notchCenter);
+    notchSlider.setAttribute('aria-valuetext', Math.round(notchCenter) + ' hertz');
+    $('noiseVolLabel').textContent = noiseVolEl.value + '%';
+    $('slicePlan').innerHTML = planHtml();
+
+    $('btnWiden').disabled = searchWidthIndex === 0;
+    $('btnNarrow').disabled = searchWidthIndex === WIDTH_LADDER.length - 1;
+    $('btnStepDown').disabled = searchCenter <= FREQ_MIN + 0.05;
+    $('btnStepUp').disabled = searchCenter >= FREQ_MAX - 0.05;
+    $('btnSearchPlay').textContent = isSemitone() ? 'Play tone' : 'Play band';
+
+    var rawUp = searchCenter * Math.pow(2, currentWidth());
+    var rawDown = searchCenter / Math.pow(2, currentWidth());
+    $('btnStepUp').title = rawUp > FREQ_MAX + 0.5
+      ? 'Step up one band. Next center would pass 20 kHz, so it stops at 20 kHz.'
+      : 'Step up one band, to ' + formatHz(stepCenter(searchCenter, currentWidth(), 1)) + '. No overlap.';
+    $('btnStepDown').title = rawDown < FREQ_MIN - 0.5
+      ? 'Step down one band. Next center would pass 1 kHz, so it stops at 1 kHz.'
+      : 'Step down one band, to ' + formatHz(stepCenter(searchCenter, currentWidth(), -1)) + '. No overlap.';
+
+    document.querySelectorAll('#widthSeg button').forEach(function (b) {
+      b.classList.toggle('active', +b.dataset.w === searchWidthIndex);
+    });
+    drawNotchViz();
+  }
+
+  function setSearchStatus(msg, on) {
+    $('searchStatus').textContent = msg;
+    $('searchDot').className = 'dot' + (on ? ' on' : '');
+  }
+
+  function setNoiseStatus(msg, on) {
+    $('noiseStatus').textContent = msg;
+    $('noiseDot').className = 'dot' + (on ? ' on' : '');
+  }
+
+  function refreshSearchStatus() {
+    if (searchOn) {
+      var e = bandEdges(searchCenter, currentWidth());
+      var msg = isSemitone()
+        ? 'Playing tone at ' + formatHz(searchCenter) + ' · ' + WIDTH_NAME[searchWidthIndex]
+        : 'Playing noise band ' + Math.round(e.lo) + '\u2013' + Math.round(e.hi) + ' Hz · ' +
+          WIDTH_NAME[searchWidthIndex] + ' · ' + Math.round(e.widthHz) + ' Hz wide';
+      if (!isSemitone() && searchAudible && searchAudible.trimmed) {
+        msg += ' · top limited by speaker range';
+      }
+      setSearchStatus(msg, true);
+      return;
+    }
+    if (!accepted) setSearchStatus('Accept the disclaimer to enable audio', false);
+    else setSearchStatus('Ready · ' + searchEdgeText(), false);
+  }
+
+  function sliceStatus(i) {
+    var s = stepSlices[i];
+    var msg = 'Slice ' + (i + 1) + ' of ' + stepSlices.length + ' · ' + placeName(s.k) +
+      ' · ' + Math.round(s.lo) + '\u2013' + Math.round(s.hi) + ' Hz';
+    if (stepDeadline) {
+      var left = Math.max(0, Math.ceil((stepDeadline - Date.now()) / 1000));
+      msg += ' · ' + left + 's';
+    }
+    if (plan.limitedUp) msg += ' · up limited by speaker range';
+    if (plan.limitedDown) msg += ' · down limited by 1 kHz range';
+    return msg;
+  }
+
+  function ensureAudio() {
+    if (!audioCtx) {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      audioCtx = new AC();
+    }
+    if (audioCtx.state === 'suspended') return audioCtx.resume();
+    return Promise.resolve();
+  }
+
+  function disconnectNode(n) {
+    if (!n) return;
+    try { n.disconnect(); } catch (e) {}
+  }
+
+  function makeBiquad(type, freq) {
+    var f = audioCtx.createBiquadFilter();
+    f.type = type;
+    f.frequency.value = freq;
+    f.Q.value = BIQUAD_Q;
+    return f;
+  }
+
+  function audibleSearchEdges(edges) {
+    var maxHi = playableHiMax(audioCtx.sampleRate);
+    if (edges.lo >= maxHi) return null;
+    var lo = Math.max(20, edges.lo);
+    var hi = Math.min(maxHi, edges.hi);
+    if (!(hi > lo)) return null;
+    return {
+      lo: lo,
+      hi: hi,
+      trimmed: edges.hi > maxHi + 0.5 || edges.lo < 20
+    };
+  }
+
+  function searchLevel(aud) {
+    var vol = (+searchVolEl.value) / 100;
+    if (isSemitone()) return Math.max(0.0001, vol * 0.22);
+    var bw = Math.max(1, aud.hi - aud.lo);
+    var makeup = clamp(Math.sqrt((audioCtx.sampleRate / 2) / bw), 1, 5);
+    return Math.max(0.0001, vol * 0.16 * makeup);
+  }
+
+  function makeWhiteBuffer(seconds) {
+    var sr = audioCtx.sampleRate;
+    var len = Math.floor(sr * seconds);
+    var buf = audioCtx.createBuffer(2, len, sr);
+    for (var c = 0; c < 2; c++) {
+      var data = buf.getChannelData(c);
+      for (var i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+    }
+    return buf;
+  }
+
+  function makePinkBuffer(seconds) {
+    var sr = audioCtx.sampleRate;
+    var len = Math.floor(sr * seconds);
+    var buf = audioCtx.createBuffer(2, len, sr);
+    for (var c = 0; c < 2; c++) {
+      var data = buf.getChannelData(c);
+      var b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+      for (var i = 0; i < len; i++) {
+        var white = Math.random() * 2 - 1;
+        b0 = 0.99886 * b0 + white * 0.0555179;
+        b1 = 0.99332 * b1 + white * 0.0750759;
+        b2 = 0.96900 * b2 + white * 0.1538520;
+        b3 = 0.86650 * b3 + white * 0.3104856;
+        b4 = 0.55000 * b4 + white * 0.5329522;
+        b5 = -0.7616 * b5 - white * 0.0168980;
+        var pink = b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362;
+        b6 = white * 0.115926;
+        data[i] = pink * 0.11;
+      }
+    }
+    return buf;
+  }
+
+  function silenceSearchNow() {
+    try { if (searchOsc) searchOsc.stop(); } catch (e) {}
+    try { if (searchSource) searchSource.stop(); } catch (e) {}
+    disconnectNode(searchOsc);
+    disconnectNode(searchSource);
+    disconnectNode(searchGain);
+    searchHp.forEach(disconnectNode);
+    searchLp.forEach(disconnectNode);
+    searchOsc = null;
+    searchSource = null;
+    searchGain = null;
+    searchHp = [];
+    searchLp = [];
+    searchAudible = null;
+  }
+
+  function startSearch() {
+    if (!accepted) {
+      setSearchStatus('Accept the disclaimer first', false);
+      return;
+    }
+    var gen = ++searchGen;
+    ensureAudio().then(function () {
+      if (gen !== searchGen) return;
+      silenceSearchNow();
+      var wasNoise = !!noiseSource;
+      stopNoise(true);
+      if (wasNoise) setNoiseStatus('Therapy stopped', false);
+      refreshPlan();
+      var edges = bandEdges(searchCenter, currentWidth());
+      searchGain = audioCtx.createGain();
+      var level = 0.0001;
+      if (isSemitone()) {
+        var maxTone = audioCtx.sampleRate / 2 - NYQUIST_MARGIN;
+        if (searchCenter > maxTone) {
+          searchGain = null;
+          searchOn = false;
+          setSearchStatus('This tone is above what this device can play.', false);
+          enableAudioButtons(true);
+          updateLabels();
+          return;
+        }
+        searchOsc = audioCtx.createOscillator();
+        searchOsc.type = 'sine';
+        searchOsc.frequency.value = searchCenter;
+        searchOsc.connect(searchGain);
+        level = searchLevel(null);
+        searchOsc.start();
+        searchAudible = null;
+      } else {
+        var aud = audibleSearchEdges(edges);
+        if (!aud) {
+          searchGain = null;
+          searchOn = false;
+          setSearchStatus('This band is above what this device can play.', false);
+          enableAudioButtons(true);
+          updateLabels();
+          return;
+        }
+        searchAudible = aud;
+        var buf = makeWhiteBuffer(2);
+        searchSource = audioCtx.createBufferSource();
+        searchSource.buffer = buf;
+        searchSource.loop = true;
+        for (var i = 0; i < 4; i++) {
+          searchHp.push(makeBiquad('highpass', aud.lo));
+          searchLp.push(makeBiquad('lowpass', aud.hi));
+        }
+        searchSource.connect(searchHp[0]);
+        for (var h = 0; h < 3; h++) searchHp[h].connect(searchHp[h + 1]);
+        searchHp[3].connect(searchLp[0]);
+        for (var l = 0; l < 3; l++) searchLp[l].connect(searchLp[l + 1]);
+        searchLp[3].connect(searchGain);
+        level = searchLevel(aud);
+        searchSource.start();
+      }
+      searchGain.connect(audioCtx.destination);
+      var t = audioCtx.currentTime;
+      searchGain.gain.setValueAtTime(0.0001, t);
+      searchGain.gain.exponentialRampToValueAtTime(level, t + 0.05);
+      searchOn = true;
+      $('btnSearchPlay').disabled = true;
+      $('btnSearchStop').disabled = false;
+      $('pill1').classList.add('active');
+      refreshSearchStatus();
+      updateLabels();
+      saveSettings();
+    }).catch(function () {
+      searchOn = false;
+      setSearchStatus('Could not start audio', false);
+    });
+  }
+
+  function stopSearch(silent) {
+    searchGen++;
+    searchOn = false;
+    var osc = searchOsc;
+    var src = searchSource;
+    var g = searchGain;
+    var nodes = [osc, src, g].concat(searchHp, searchLp);
+    if (g && audioCtx) {
+      try {
+        var t = audioCtx.currentTime;
+        var cur = Math.max(0.0001, g.gain.value);
+        g.gain.cancelScheduledValues(t);
+        g.gain.setValueAtTime(cur, t);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
+      } catch (e) {}
+    }
+    searchOsc = null;
+    searchSource = null;
+    searchGain = null;
+    searchHp = [];
+    searchLp = [];
+    searchAudible = null;
+    setTimeout(function () {
+      try { if (osc) osc.stop(); } catch (e) {}
+      try { if (src) src.stop(); } catch (e) {}
+      nodes.forEach(disconnectNode);
+    }, 60);
+    $('btnSearchPlay').disabled = !accepted;
+    $('btnSearchStop').disabled = true;
+    if (!silent) setSearchStatus('Search stopped', false);
+  }
+
+  function syncSearchAudio() {
+    if (!searchOn || !audioCtx) return;
+    var wantTone = isSemitone();
+    var haveTone = !!searchOsc;
+    if (wantTone !== haveTone) {
+      startSearch();
+      return;
+    }
+    var t = audioCtx.currentTime;
+    if (wantTone && searchOsc) {
+      var maxTone = audioCtx.sampleRate / 2 - 1;
+      searchOsc.frequency.setTargetAtTime(Math.min(searchCenter, maxTone), t, 0.03);
+      if (searchGain) searchGain.gain.setTargetAtTime(searchLevel(null), t, 0.03);
+      searchAudible = null;
+      refreshSearchStatus();
+      return;
+    }
+    var edges = bandEdges(searchCenter, currentWidth());
+    var aud = audibleSearchEdges(edges);
+    if (!aud) {
+      setSearchStatus('This band is above what this device can play.', false);
+      return;
+    }
+    searchAudible = aud;
+    for (var i = 0; i < searchHp.length; i++) {
+      searchHp[i].frequency.setTargetAtTime(aud.lo, t, 0.04);
+      searchLp[i].frequency.setTargetAtTime(aud.hi, t, 0.04);
+    }
+    if (searchGain) searchGain.gain.setTargetAtTime(searchLevel(aud), t, 0.04);
+    refreshSearchStatus();
+  }
+
+  function applyEdges(lo, hi, tau) {
+    if (!audioCtx || !lpFilters.length) return;
+    var t = audioCtx.currentTime;
+    var tc = (tau > 0) ? tau : SLIDER_TAU;
+    var maxF = audioCtx.sampleRate / 2 - 1;
+    var loC = clamp(lo, 10, maxF - 2);
+    var hiC = clamp(hi, loC + 1, maxF);
+    for (var i = 0; i < lpFilters.length; i++) {
+      lpFilters[i].frequency.setTargetAtTime(loC, t, tc);
+      hpFilters[i].frequency.setTargetAtTime(hiC, t, tc);
+    }
+  }
+
+  function clearStepTimer() {
+    if (stepTimer) {
+      clearTimeout(stepTimer);
+      stepTimer = null;
+    }
+    stepDeadline = 0;
+  }
+
+  function scheduleDwell(ms) {
+    clearStepTimer();
+    var wait = Math.max(20, ms);
+    stepRemainMs = wait;
+    stepDeadline = Date.now() + wait;
+    stepTimer = setTimeout(onDwellDone, wait);
+  }
+
+  function onDwellDone() {
+    stepTimer = null;
+    stepDeadline = 0;
+    if (!stepperActive || notchDragging || !noiseSource || stepSlices.length < 2) return;
+    var next = (stepIndex + 1) % stepSlices.length;
+    goToSlice(next, STEP_TAU);
+    scheduleDwell(DWELL_MS);
+  }
+
+  function goToSlice(i, tau) {
+    stepIndex = i;
+    var s = stepSlices[i];
+    applyEdges(s.lo, s.hi, tau);
+    if (noiseSource) setNoiseStatus(sliceStatus(i), true);
+    updateLabels();
+  }
+
+  function teardownNoise() {
+    cancelTimer();
+    clearStepTimer();
+    stepperActive = false;
+    stepSlices = [];
+    stepIndex = 0;
+    softFadeActive = false;
+    if (noiseSource) {
+      try { noiseSource.stop(); } catch (e) {}
+      disconnectNode(noiseSource);
+      noiseSource = null;
+    }
+    lpFilters.forEach(disconnectNode);
+    hpFilters.forEach(disconnectNode);
+    lpFilters = [];
+    hpFilters = [];
+    disconnectNode(sumGain);
+    sumGain = null;
+    disconnectNode(shelfFilter);
+    shelfFilter = null;
+    if (noiseGain) {
+      disconnectNode(noiseGain);
+      noiseGain = null;
+    }
+  }
+
+  function startNoise() {
+    if (!accepted) {
+      setNoiseStatus('Accept the disclaimer first', false);
+      return;
+    }
+    fadeToken++;
+    var gen = ++noiseGen;
+    ensureAudio().then(function () {
+      if (gen !== noiseGen) return;
+      teardownNoise();
+      var wasSearch = searchOn;
+      stopSearch(true);
+      if (wasSearch) refreshSearchStatus();
+      refreshPlan();
+      if (!plan.slices.length) {
+        setNoiseStatus('No slice around ' + formatHz(notchCenter) + ' fits this speaker.', false);
+        $('btnNoisePlay').disabled = !accepted;
+        $('btnNoiseStop').disabled = true;
+        updateLabels();
+        saveSettings();
+        return;
+      }
+      var first = plan.slices[0];
+      var buf = noiseColor === 'pink' ? makePinkBuffer(2) : makeWhiteBuffer(2);
+      noiseSource = audioCtx.createBufferSource();
+      noiseSource.buffer = buf;
+      noiseSource.loop = true;
+
+      lpFilters = [];
+      hpFilters = [];
+      for (var i = 0; i < 4; i++) {
+        lpFilters.push(makeBiquad('lowpass', first.lo));
+        hpFilters.push(makeBiquad('highpass', first.hi));
+      }
+      for (var n = 0; n < 3; n++) {
+        lpFilters[n].connect(lpFilters[n + 1]);
+        hpFilters[n].connect(hpFilters[n + 1]);
+      }
+      sumGain = audioCtx.createGain();
+      sumGain.gain.value = 1;
+      lpFilters[3].connect(sumGain);
+      hpFilters[3].connect(sumGain);
+
+      shelfFilter = audioCtx.createBiquadFilter();
+      shelfFilter.type = 'highshelf';
+      shelfFilter.frequency.value = Math.min(17000, audioCtx.sampleRate / 2 - 500);
+      shelfFilter.gain.value = noiseColor === 'white' ? -2 : 0;
+
+      noiseGain = audioCtx.createGain();
+      var vol = (+noiseVolEl.value) / 100 * 0.35;
+      noiseGain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+      noiseGain.gain.exponentialRampToValueAtTime(Math.max(0.0001, vol), audioCtx.currentTime + 0.4);
+
+      noiseSource.connect(lpFilters[0]);
+      noiseSource.connect(hpFilters[0]);
+      sumGain.connect(shelfFilter);
+      shelfFilter.connect(noiseGain);
+      noiseGain.connect(audioCtx.destination);
+      noiseSource.start();
+
+      stepSlices = plan.slices;
+      stepIndex = 0;
+      stepperActive = stepSlices.length >= 2;
+      if (stepperActive) scheduleDwell(DWELL_MS);
+
+      $('btnNoisePlay').disabled = true;
+      $('btnNoiseStop').disabled = false;
+      $('pill2').classList.add('active');
+      $('pill1').classList.add('done');
+      setNoiseStatus(sliceStatus(0), true);
+
+      if (sessionMinutes > 0) {
+        sessionEndsAt = Date.now() + sessionMinutes * 60 * 1000;
+        $('timerDisplay').hidden = false;
+        tickTimer();
+      } else {
+        $('timerDisplay').hidden = true;
+        cancelTimer();
+      }
+      updateLabels();
+      saveSettings();
+    }).catch(function () {
+      setNoiseStatus('Could not start audio', false);
+    });
+  }
+
+  function softStopNoise() {
+    if (!noiseGain || !audioCtx || softFadeActive) {
+      stopNoise(false);
+      return;
+    }
+    clearStepTimer();
+    stepperActive = false;
+    softFadeActive = true;
+    setNoiseStatus('Soft ending…', true);
+    $('noiseDot').className = 'dot warn';
+    var t = audioCtx.currentTime;
+    var cur = Math.max(0.0001, noiseGain.gain.value);
+    noiseGain.gain.cancelScheduledValues(t);
+    noiseGain.gain.setValueAtTime(cur, t);
+    noiseGain.gain.exponentialRampToValueAtTime(0.0001, t + 2.5);
+    var token = ++fadeToken;
+    setTimeout(function () {
+      if (token !== fadeToken) return;
+      stopNoise(false);
+    }, 2700);
+  }
+
+  function stopNoise(silent) {
+    noiseGen++;
+    fadeToken++;
+    teardownNoise();
+    $('btnNoisePlay').disabled = !accepted;
+    $('btnNoiseStop').disabled = true;
+    $('timerDisplay').hidden = true;
+    if (!silent) setNoiseStatus('Therapy stopped', false);
+  }
+
+  function commitNotchCenter() {
+    refreshPlan();
+    if (!noiseSource) {
+      updateLabels();
+      saveSettings();
+      return;
+    }
+    if (!plan.slices.length) {
+      stopNoise(false);
+      setNoiseStatus('No slice around ' + formatHz(notchCenter) + ' fits this speaker.', false);
+      updateLabels();
+      saveSettings();
+      return;
+    }
+    stepSlices = plan.slices;
+    stepIndex = 0;
+    stepperActive = stepSlices.length >= 2;
+    applyEdges(stepSlices[0].lo, stepSlices[0].hi, STEP_TAU);
+    if (stepperActive) scheduleDwell(DWELL_MS);
+    else clearStepTimer();
+    setNoiseStatus(sliceStatus(0), true);
+    updateLabels();
+    saveSettings();
+  }
+
+  function cancelTimer() {
+    if (timerRaf) {
+      cancelAnimationFrame(timerRaf);
+      timerRaf = null;
+    }
+    sessionEndsAt = 0;
+  }
+
+  function tickTimer() {
+    if (!sessionEndsAt) return;
+    var left = Math.max(0, sessionEndsAt - Date.now());
+    var s = Math.ceil(left / 1000);
+    var mm = String(Math.floor(s / 60)).padStart(2, '0');
+    var ss = String(s % 60).padStart(2, '0');
+    $('timerDisplay').textContent = mm + ':' + ss;
+    if (left <= 0) {
+      softStopNoise();
+      return;
+    }
+    if (left <= 2500 && noiseGain && !softFadeActive) {
+      softStopNoise();
+      return;
+    }
+    timerRaf = requestAnimationFrame(tickTimer);
+  }
+
+  function drawNotchViz() {
+    var dpr = window.devicePixelRatio || 1;
+    var w = canvas.clientWidth || 680;
+    var h = 92;
+    if (canvas.width !== Math.floor(w * dpr) || canvas.height !== Math.floor(h * dpr)) {
+      canvas.width = Math.floor(w * dpr);
+      canvas.height = Math.floor(h * dpr);
+    }
+    ctx2d.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx2d.clearRect(0, 0, w, h);
+    ctx2d.fillStyle = '#0a0e14';
+    ctx2d.fillRect(0, 0, w, h);
+
+    var fMin = 700;
+    var fMax = 40000;
+    function freqToX(f) {
+      var c = clamp(f, fMin, fMax);
+      return (Math.log(c / fMin) / Math.log(fMax / fMin)) * w;
+    }
+
+    var slices = (plan && plan.slices) ? plan.slices : [];
+    var skipped = (plan && plan.skipped) ? plan.skipped : [];
+    slices.forEach(function (s) {
+      var x1 = freqToX(s.lo);
+      var x2 = freqToX(s.hi);
+      ctx2d.fillStyle = 'rgba(88, 166, 255, 0.10)';
+      ctx2d.fillRect(x1, 16, Math.max(1, x2 - x1), h - 32);
+    });
+    skipped.forEach(function (s) {
+      if (s.hi < fMin || s.lo > fMax) return;
+      var x1 = freqToX(s.lo);
+      var x2 = freqToX(s.hi);
+      ctx2d.fillStyle = 'rgba(248, 81, 73, 0.08)';
+      ctx2d.fillRect(x1, 16, Math.max(1, x2 - x1), h - 32);
+    });
+
+    var curve = bandEdges(notchCenter, THERAPY_W);
+    var active = null;
+    if (!notchDragging && noiseSource && stepSlices.length) active = stepSlices[stepIndex];
+    else if (!notchDragging) {
+      for (var i = 0; i < slices.length; i++) if (slices[i].k === 0) active = slices[i];
+      if (!active && slices.length) active = slices[slices.length - 1];
+    }
+    if (active) curve = active;
+
+    ctx2d.strokeStyle = '#21262d';
+    ctx2d.lineWidth = 1;
+    for (var g = 1; g < 4; g++) {
+      var y = (h / 4) * g;
+      ctx2d.beginPath();
+      ctx2d.moveTo(0, y);
+      ctx2d.lineTo(w, y);
+      ctx2d.stroke();
+    }
+
+    var trans = 0.04;
+    function magDb(f) {
+      var enter = clamp(Math.log2(f / curve.lo) / trans + 0.5, 0, 1);
+      var leave = clamp(Math.log2(f / curve.hi) / trans + 0.5, 0, 1);
+      return -42 * clamp(enter - leave, 0, 1);
+    }
+    ctx2d.beginPath();
+    ctx2d.strokeStyle = '#58a6ff';
+    ctx2d.lineWidth = 2;
+    for (var x = 0; x <= w; x++) {
+      var f = fMin * Math.pow(fMax / fMin, x / w);
+      var db = magDb(f);
+      var y = 14 + (h - 30) * (1 - (db + 48) / 51);
+      if (x === 0) ctx2d.moveTo(x, y);
+      else ctx2d.lineTo(x, y);
+    }
+    ctx2d.stroke();
+
+    var cx = freqToX(notchCenter);
+    ctx2d.strokeStyle = '#d29922';
+    ctx2d.setLineDash([3, 3]);
+    ctx2d.beginPath();
+    ctx2d.moveTo(cx, 12);
+    ctx2d.lineTo(cx, h - 16);
+    ctx2d.stroke();
+    ctx2d.setLineDash([]);
+
+    if (plan && plan.maxHi) {
+      var lx = freqToX(plan.maxHi);
+      ctx2d.strokeStyle = 'rgba(248, 81, 73, 0.7)';
+      ctx2d.setLineDash([2, 3]);
+      ctx2d.beginPath();
+      ctx2d.moveTo(lx, 12);
+      ctx2d.lineTo(lx, h - 16);
+      ctx2d.stroke();
+      ctx2d.setLineDash([]);
+    }
+
+    ctx2d.fillStyle = '#8b949e';
+    ctx2d.font = '10px system-ui,sans-serif';
+    [1000, 2000, 4000, 8000, 16000, 20000].forEach(function (tick) {
+      var tx = freqToX(tick);
+      ctx2d.fillText((tick / 1000) + 'k', tx + 2, h - 4);
+    });
+    var label = Math.round(curve.lo) + '\u2013' + Math.round(curve.hi) + ' Hz';
+    ctx2d.fillText(label, 6, 12);
+  }
+
+  function saveSettings() {
+    try {
+      var data = {
+        searchCenter: searchCenter,
+        searchWidthIndex: searchWidthIndex,
+        notchCenter: notchCenter,
+        searchVol: +searchVolEl.value,
+        noiseVol: +noiseVolEl.value,
+        noiseColor: noiseColor,
+        sessionMinutes: sessionMinutes,
+        accepted: accepted
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch (e) {}
+  }
+
+  function loadSettings() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      var d = JSON.parse(raw);
+      if (d.searchCenter != null && isFinite(+d.searchCenter)) {
+        searchCenter = clamp(+d.searchCenter, FREQ_MIN, FREQ_MAX);
+      }
+      if (d.searchWidthIndex != null && isFinite(+d.searchWidthIndex)) {
+        searchWidthIndex = clamp(Math.round(+d.searchWidthIndex), 0, WIDTH_LADDER.length - 1);
+      }
+      if (d.notchCenter != null && isFinite(+d.notchCenter)) {
+        notchCenter = clamp(+d.notchCenter, FREQ_MIN, FREQ_MAX);
+      }
+      if (d.searchVol != null) searchVolEl.value = clamp(+d.searchVol, 0, 40);
+      if (d.noiseVol != null) noiseVolEl.value = clamp(+d.noiseVol, 0, 50);
+      if (d.noiseColor === 'pink' || d.noiseColor === 'white') {
+        noiseColor = d.noiseColor;
+        $('noiseWhite').classList.toggle('active', noiseColor === 'white');
+        $('noisePink').classList.toggle('active', noiseColor === 'pink');
+      }
+      if (typeof d.sessionMinutes === 'number') {
+        sessionMinutes = d.sessionMinutes;
+        document.querySelectorAll('.seg [data-mins]').forEach(function (b) {
+          b.classList.toggle('active', +b.dataset.mins === sessionMinutes);
+        });
+      }
+      if (d.accepted) {
+        accepted = true;
+        acceptEl.checked = true;
+        enableAudioButtons(true);
+      }
+    } catch (e) {}
+  }
+
+  function enableAudioButtons(on) {
+    $('btnSearchPlay').disabled = !on || searchOn;
+    $('btnNoisePlay').disabled = !on || !!noiseSource;
+    if (!on) {
+      $('btnSearchStop').disabled = true;
+      $('btnNoiseStop').disabled = true;
+    }
+  }
+
+  acceptEl.addEventListener('change', function () {
+    accepted = !!acceptEl.checked;
+    enableAudioButtons(accepted);
+    if (accepted) {
+      refreshSearchStatus();
+      setNoiseStatus('Ready — press Play notched noise', false);
+    } else {
+      stopSearch(true);
+      stopNoise(true);
+      setSearchStatus('Accept the disclaimer to enable audio', false);
+      setNoiseStatus('Therapy idle', false);
+    }
+    saveSettings();
+  });
+
+  searchSlider.addEventListener('input', function () {
+    searchCenter = sliderToFreq(searchSlider.value);
+    updateLabels();
+    syncSearchAudio();
+    if (!searchOn) refreshSearchStatus();
+    saveSettings();
+  });
+
+  searchVolEl.addEventListener('input', function () {
+    if (searchGain && audioCtx && searchOn) {
+      var level = searchLevel(searchAudible);
+      searchGain.gain.setTargetAtTime(level, audioCtx.currentTime, 0.03);
+    }
+    updateLabels();
+    saveSettings();
+  });
+
+  function applySearchStep(dir) {
+    searchCenter = stepCenter(searchCenter, currentWidth(), dir);
+    pushSliders();
+    updateLabels();
+    syncSearchAudio();
+    if (!searchOn) refreshSearchStatus();
+    saveSettings();
+  }
+
+  $('btnStepDown').addEventListener('click', function () { applySearchStep(-1); });
+  $('btnStepUp').addEventListener('click', function () { applySearchStep(1); });
+  $('btnNarrow').addEventListener('click', function () {
+    searchWidthIndex = WIDTH_LADDER.indexOf(narrower(currentWidth()));
+    if (searchWidthIndex < 0) searchWidthIndex = WIDTH_LADDER.length - 1;
+    updateLabels();
+    syncSearchAudio();
+    if (!searchOn) refreshSearchStatus();
+    saveSettings();
+  });
+  $('btnWiden').addEventListener('click', function () {
+    searchWidthIndex = WIDTH_LADDER.indexOf(wider(currentWidth()));
+    if (searchWidthIndex < 0) searchWidthIndex = 0;
+    updateLabels();
+    syncSearchAudio();
+    if (!searchOn) refreshSearchStatus();
+    saveSettings();
+  });
+  $('widthSeg').addEventListener('click', function (ev) {
+    var btn = ev.target.closest('button');
+    if (!btn) return;
+    searchWidthIndex = clamp(+btn.dataset.w, 0, WIDTH_LADDER.length - 1);
+    updateLabels();
+    syncSearchAudio();
+    if (!searchOn) refreshSearchStatus();
+    saveSettings();
+  });
+
+  $('btnSearchPlay').addEventListener('click', startSearch);
+  $('btnSearchStop').addEventListener('click', function () { stopSearch(false); });
+
+  $('btnLockFreq').addEventListener('click', function () {
+    notchCenter = searchCenter;
+    pushSliders();
+    refreshPlan();
+    stopSearch(true);
+    refreshSearchStatus();
+    $('pill1').classList.add('done');
+    $('pill2').classList.add('active');
+    if (noiseSource) commitNotchCenter();
+    else {
+      updateLabels();
+      setNoiseStatus('Locked at ' + formatHz(notchCenter) + ' · press Play notched noise', false);
+      saveSettings();
+    }
+    $('step2').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  notchSlider.addEventListener('pointerdown', function (ev) {
+    notchDragging = true;
+    dragOrigin = notchCenter;
+    if (stepperActive && stepDeadline) stepRemainMs = Math.max(0, stepDeadline - Date.now());
+    else stepRemainMs = DWELL_MS;
+    if (stepperActive) clearStepTimer();
+    try { notchSlider.setPointerCapture(ev.pointerId); } catch (e) {}
+  });
+  notchSlider.addEventListener('input', function () {
+    notchCenter = sliderToFreq(notchSlider.value);
+    if (notchDragging && noiseSource && audioCtx) {
+      refreshPlan();
+      updateLabels();
+      var e = bandEdges(notchCenter, THERAPY_W);
+      var maxHi = playableHiMax(audioCtx.sampleRate);
+      var lo = clamp(e.lo, 20, maxHi - 1);
+      var hi = clamp(e.hi, lo + 1, maxHi);
+      applyEdges(lo, hi, SLIDER_TAU);
+      setNoiseStatus('Adjusting notch · ' + Math.round(e.lo) + '\u2013' + Math.round(e.hi) + ' Hz (stepper paused)', true);
+      saveSettings();
+      return;
+    }
+    // Keyboard (no pointer drag) commits immediately so the slices follow the slider.
+    if (!notchDragging) commitNotchCenter();
+  });
+  function endNotchDrag() {
+    if (!notchDragging) return;
+    notchDragging = false;
+    var moved = Math.abs(Math.log(Math.max(notchCenter, 1) / Math.max(dragOrigin, 1))) > 0.0008;
+    if (!moved) {
+      notchCenter = dragOrigin;
+      refreshPlan();
+      pushSliders();
+      if (noiseSource && stepSlices.length) {
+        applyEdges(stepSlices[stepIndex].lo, stepSlices[stepIndex].hi, SLIDER_TAU);
+        setNoiseStatus(sliceStatus(stepIndex), true);
+        if (stepperActive) {
+          if (stepRemainMs <= 20) onDwellDone();
+          else scheduleDwell(stepRemainMs);
+        }
+      }
+      updateLabels();
+      return;
+    }
+    commitNotchCenter();
+  }
+  window.addEventListener('pointerup', endNotchDrag);
+  window.addEventListener('pointercancel', endNotchDrag);
+
+  noiseVolEl.addEventListener('input', function () {
+    if (noiseGain && audioCtx && !softFadeActive) {
+      var vol = (+noiseVolEl.value) / 100 * 0.35;
+      noiseGain.gain.setTargetAtTime(Math.max(0.0001, vol), audioCtx.currentTime, 0.05);
+    }
+    updateLabels();
+    saveSettings();
+  });
+
+  $('btnNoisePlay').addEventListener('click', startNoise);
+  $('btnNoiseStop').addEventListener('click', function () { stopNoise(false); });
+
+  $('noiseWhite').addEventListener('click', function () {
+    noiseColor = 'white';
+    $('noiseWhite').classList.add('active');
+    $('noisePink').classList.remove('active');
+    saveSettings();
+    if (noiseSource) startNoise();
+  });
+  $('noisePink').addEventListener('click', function () {
+    noiseColor = 'pink';
+    $('noisePink').classList.add('active');
+    $('noiseWhite').classList.remove('active');
+    saveSettings();
+    if (noiseSource) startNoise();
+  });
+
+  document.querySelectorAll('.seg [data-mins]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      sessionMinutes = +btn.dataset.mins;
+      document.querySelectorAll('.seg [data-mins]').forEach(function (b) {
+        b.classList.toggle('active', +b.dataset.mins === sessionMinutes);
+      });
+      if (noiseSource && sessionMinutes > 0) {
+        sessionEndsAt = Date.now() + sessionMinutes * 60 * 1000;
+        $('timerDisplay').hidden = false;
+        if (timerRaf) cancelAnimationFrame(timerRaf);
+        tickTimer();
+      } else if (sessionMinutes === 0) {
+        cancelTimer();
+        $('timerDisplay').hidden = true;
+      }
+      saveSettings();
+    });
+  });
+
+  setInterval(function () {
+    if (!stepperActive || !noiseSource || !stepDeadline || notchDragging || softFadeActive) return;
+    $('noiseStatus').textContent = sliceStatus(stepIndex);
+  }, 500);
+
+  window.addEventListener('resize', drawNotchViz);
+
+  enableAudioButtons(false);
+  loadSettings();
+  refreshPlan();
+  pushSliders();
+  updateLabels();
+  if (!accepted) setSearchStatus('Accept the disclaimer to enable audio', false);
+  else refreshSearchStatus();
+})();
+  </script>
+</body>
+</html>
