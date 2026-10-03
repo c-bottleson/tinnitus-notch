@@ -55,6 +55,12 @@
       font-size: .85rem;
     }
 
+    .play-warn {
+      margin: 0 0 .55rem;
+      color: #f0c674;
+      font-size: .82rem;
+      font-weight: 650;
+    }
     .banner {
       background: #1a1208;
       border: 1px solid #5c3d12;
@@ -319,21 +325,14 @@
   <div class="wrap">
     <header class="app-header">
       <h1>Notch Therapy</h1>
-      <div class="tag">Educational / self-help audio tool · OldBranch / Ideator Prototype</div>
+      <div class="tag">Settings stay in this browser.</div>
     </header>
 
-    <section class="banner" id="disclaimer" role="note" aria-label="Important safety disclaimer">
-      <strong>Important — not a medical device</strong>
-      <ul>
-        <li>This is an educational prototype, not a cure, diagnosis, or medical advice.</li>
-        <li>Consult an audiologist or ENT for tinnitus evaluation and treatment.</li>
-        <li>Start at a quiet volume. Prefer headphones at a comfortable level.</li>
-        <li><strong>Stop immediately</strong> if you feel pain, dizziness, or your tinnitus worsens.</li>
-        <li>Never use at volumes that could damage hearing. Safe listening first.</li>
-      </ul>
+    <section class="banner" id="disclaimer" role="note" aria-label="Not a medical device">
+      <strong>Not a medical device.</strong> Stop if it hurts or the tinnitus gets worse.
       <label class="accept">
         <input type="checkbox" id="acceptDisclaimer" />
-        <span>I understand this is not medical advice and I will keep volume safe.</span>
+        <span>I understand.</span>
       </label>
     </section>
 
@@ -393,7 +392,7 @@
 
     <section class="card" id="step2" aria-labelledby="step2-title">
       <h2 id="step2-title">Step 2 — Notched noise therapy</h2>
-      <p class="hint">When you lock a pitch, the notch is centered on that frequency. You do not set a separate low and high band. Each slice is a hard notch half an octave wide. Playback starts two slices below the locked pitch and walks upward, edge to edge with no overlap: two below, the center, and two above. About 30 seconds on each slice, then it loops. A slice is left out only when its top edge is too high for this device to play (or the slice sits entirely below 1 kHz). The status says so. This is not a medical device or a treatment. Keep the volume low, and stop if it hurts or the tinnitus gets worse.</p>
+      <p class="hint">When you lock a pitch, the notch is centered on that frequency. You do not set a separate low and high band. Each slice is a hard notch half an octave wide. Playback starts two slices below the locked pitch and walks upward, edge to edge with no overlap: two below, the center, and two above. About 30 seconds on each slice, then it loops. A slice is left out only when its top edge is too high for this device to play (or the slice sits entirely below 1 kHz). The status says so.</p>
 
       <canvas class="notch-viz" id="notchViz" width="680" height="92" aria-label="Notch slices across 1 kHz to 20 kHz"></canvas>
 
@@ -430,6 +429,7 @@
 
       <div class="timer-big" id="timerDisplay" hidden>00:00</div>
 
+      <p class="play-warn">Volume at or just over covering the tinnitus.</p>
       <div class="row">
         <button type="button" class="btn primary" id="btnNoisePlay">Play notched noise</button>
         <button type="button" class="btn danger" id="btnNoiseStop" disabled>Stop</button>
@@ -1374,6 +1374,7 @@
         accepted = true;
         acceptEl.checked = true;
         enableAudioButtons(true);
+        $('disclaimer').hidden = true;
       }
     } catch (e) {}
   }
@@ -1390,6 +1391,7 @@
   acceptEl.addEventListener('change', function () {
     accepted = !!acceptEl.checked;
     enableAudioButtons(accepted);
+    $('disclaimer').hidden = accepted;
     if (accepted) {
       refreshSearchStatus();
       setNoiseStatus('Ready — press Play notched noise', false);
