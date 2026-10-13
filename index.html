@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0d1117" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" />
   <meta name="description" content="Notch listening educational audio tool. Find a tinnitus pitch from 1 kHz to 20 kHz, then play half-octave notched noise around that pitch. Not a medical device." />
   <title>Notch Listening — Ideator Prototype</title>
   <style>
@@ -329,7 +330,7 @@
     </header>
 
     <section class="banner" id="disclaimer" role="note" aria-label="Not a medical device">
-      <strong>Not a medical device.</strong> Not intended to diagnose, treat, cure, or prevent any condition. Keep the volume low and comfortable, and stop if you feel any discomfort or the tinnitus gets worse.
+      <strong>Not a medical device.</strong> Not intended to diagnose, treat, cure, or prevent any condition. Talk to an audiologist about tinnitus care. Keep the volume low and comfortable, and stop if you feel any discomfort or the tinnitus gets worse.
       <label class="accept">
         <input type="checkbox" id="acceptDisclaimer" />
         <span>I understand.</span>
@@ -442,7 +443,7 @@
     </section>
 
     <footer class="foot">
-      Not a medical device · Not intended to diagnose, treat, cure, or prevent any condition · Settings saved in this browser · Web Audio API · Prototype for Nick
+      Not a medical device · Not intended to diagnose, treat, cure, or prevent any condition · Talk to an audiologist · Settings saved in this browser · Web Audio API · Prototype for Nick
     </footer>
   </div>
 
