@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0d1117" />
-  <meta name="description" content="Notch therapy educational audio tool. Find a tinnitus pitch from 1 kHz to 20 kHz, then play half-octave notched noise around that pitch. Not a medical device." />
-  <title>Notch Therapy — Ideator Prototype</title>
+  <meta name="description" content="Notch listening educational audio tool. Find a tinnitus pitch from 1 kHz to 20 kHz, then play half-octave notched noise around that pitch. Not a medical device." />
+  <title>Notch Listening — Ideator Prototype</title>
   <style>
     :root {
       --bg: #0d1117;
@@ -324,12 +324,12 @@
 <body>
   <div class="wrap">
     <header class="app-header">
-      <h1>Notch Therapy</h1>
+      <h1>Notch Listening</h1>
       <div class="tag">Settings stay in this browser.</div>
     </header>
 
     <section class="banner" id="disclaimer" role="note" aria-label="Not a medical device">
-      <strong>Not a medical device.</strong> Stop if it hurts or the tinnitus gets worse.
+      <strong>Not a medical device.</strong> Not intended to diagnose, treat, cure, or prevent any condition. Keep the volume low and comfortable, and stop if you feel any discomfort or the tinnitus gets worse.
       <label class="accept">
         <input type="checkbox" id="acceptDisclaimer" />
         <span>I understand.</span>
@@ -338,12 +338,12 @@
 
     <div class="steps" aria-hidden="true">
       <div class="step-pill active" id="pill1">1 · Find pitch</div>
-      <div class="step-pill" id="pill2">2 · Therapy</div>
+      <div class="step-pill" id="pill2">2 · Listen</div>
     </div>
 
     <section class="card" id="step1" aria-labelledby="step1-title">
       <h2 id="step1-title">Step 1 — Find the pitch</h2>
-      <p class="hint">Finding the pitch and moving the therapy notch are two different jobs. This step only searches. It starts as a half-octave band of noise centered near 15 kHz, where you think the tinnitus sits. Step down and step up move that whole band so the next one starts exactly where the last one ended — no overlap. Narrow tightens the width in steps: half an octave, then a quarter, an eighth, then one semitone. Widen goes back up, and it will not go wider than half an octave. At one semitone you hear a single tone instead of noise. The center slider runs from 1 kHz through 20 kHz. Match at a quiet volume. This is not a medical device.</p>
+      <p class="hint">Finding the pitch and moving the listening notch are two different jobs. This step only searches. It starts as a half-octave band of noise centered near 15 kHz, where you think the tinnitus sits. Step down and step up move that whole band so the next one starts exactly where the last one ended — no overlap. Narrow tightens the width in steps: half an octave, then a quarter, an eighth, then one semitone. Widen goes back up, and it will not go wider than half an octave. At one semitone you hear a single tone instead of noise. The center slider runs from 1 kHz through 20 kHz. Match at a quiet volume. This is not a medical device.</p>
 
       <div class="freq-display" id="searchDisplay" aria-live="polite">
         15,000 Hz
@@ -391,7 +391,7 @@
     </section>
 
     <section class="card" id="step2" aria-labelledby="step2-title">
-      <h2 id="step2-title">Step 2 — Notched noise therapy</h2>
+      <h2 id="step2-title">Step 2 — Notched noise sound session</h2>
       <p class="hint">When you lock a pitch, the notch is centered on that frequency. You do not set a separate low and high band. Each slice is a hard notch half an octave wide. Playback starts two slices below the locked pitch and walks upward, edge to edge with no overlap: two below, the center, and two above. About 30 seconds on each slice, then it loops. A slice is left out only when its top edge is too high for this device to play (or the slice sits entirely below 1 kHz). The status says so.</p>
 
       <canvas class="notch-viz" id="notchViz" width="680" height="92" aria-label="Notch slices across 1 kHz to 20 kHz"></canvas>
@@ -404,8 +404,8 @@
       <div class="plan" id="slicePlan"></div>
 
       <label class="field">
-        <span class="label"><span>Therapy volume</span><span class="val" id="noiseVolLabel">20%</span></span>
-        <input type="range" id="noiseVol" min="0" max="50" step="1" value="20" aria-label="Therapy volume" />
+        <span class="label"><span>Listening volume</span><span class="val" id="noiseVolLabel">20%</span></span>
+        <input type="range" id="noiseVol" min="0" max="50" step="1" value="20" aria-label="Listening volume" />
       </label>
 
       <div class="row">
@@ -437,12 +437,12 @@
 
       <div class="status">
         <span class="dot" id="noiseDot"></span>
-        <span id="noiseStatus" role="status">Therapy idle</span>
+        <span id="noiseStatus" role="status">Session idle</span>
       </div>
     </section>
 
     <footer class="foot">
-      Not a medical device · Settings saved in this browser · Web Audio API · Prototype for Nick
+      Not a medical device · Not intended to diagnose, treat, cure, or prevent any condition · Settings saved in this browser · Web Audio API · Prototype for Nick
     </footer>
   </div>
 
@@ -853,7 +853,7 @@
       silenceSearchNow();
       var wasNoise = !!noiseSource;
       stopNoise(true);
-      if (wasNoise) setNoiseStatus('Therapy stopped', false);
+      if (wasNoise) setNoiseStatus('Session stopped', false);
       refreshPlan();
       var edges = bandEdges(searchCenter, currentWidth());
       searchGain = audioCtx.createGain();
@@ -1170,7 +1170,7 @@
     $('btnNoisePlay').disabled = !accepted;
     $('btnNoiseStop').disabled = true;
     $('timerDisplay').hidden = true;
-    if (!silent) setNoiseStatus('Therapy stopped', false);
+    if (!silent) setNoiseStatus('Session stopped', false);
   }
 
   function commitNotchCenter() {
@@ -1399,7 +1399,7 @@
       stopSearch(true);
       stopNoise(true);
       setSearchStatus('Accept the disclaimer to enable audio', false);
-      setNoiseStatus('Therapy idle', false);
+      setNoiseStatus('Session idle', false);
     }
     saveSettings();
   });
