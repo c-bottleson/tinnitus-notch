@@ -324,6 +324,20 @@
     .btn.ghost { background: transparent; }
     .btn.sm { padding: .4rem .65rem; font-size: .8rem; }
     .btn.block { width: 100%; }
+    .btn.toggle {
+      display: inline-flex; align-items: center; justify-content: center; gap: .5rem;
+      min-height: 44px; min-width: 9.5rem; touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .btn.toggle .ico { width: 1em; height: 1em; flex: none; fill: currentColor; }
+    .btn.toggle .ico-stop { display: none; }
+    .btn.toggle.is-playing {
+      background: #3d1515; border-color: #e5534b; color: #ffd8d5;
+      box-shadow: 0 0 0 2px rgba(229,83,75,.35);
+    }
+    .btn.toggle.is-playing:hover { background: #4d1c1c; }
+    .btn.toggle.is-playing .ico-play { display: none; }
+    .btn.toggle.is-playing .ico-stop { display: inline; }
 
     .freq-display {
       text-align: center;
@@ -500,8 +514,7 @@
       </div>
 
       <div class="row">
-        <button type="button" class="btn primary" id="btnSearchPlay">Play band</button>
-        <button type="button" class="btn" id="btnSearchStop" disabled>Stop</button>
+        <button type="button" class="btn primary toggle" id="btnSearchPlay" aria-pressed="false" aria-label="Play band" disabled><svg class="ico ico-play" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9.5-5.5z"/></svg><svg class="ico ico-stop" viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="3" width="10" height="10" rx="1.5"/></svg><span class="lbl">Play band</span></button>
         <button type="button" class="btn ghost" id="btnLockFreq">Lock this pitch →</button>
       </div>
 
@@ -553,8 +566,7 @@
 
       <p class="play-warn">Volume at or just over covering the tinnitus.</p>
       <div class="row">
-        <button type="button" class="btn primary" id="btnNoisePlay">Play notched noise</button>
-        <button type="button" class="btn danger" id="btnNoiseStop" disabled>Stop</button>
+        <button type="button" class="btn primary toggle" id="btnNoisePlay" aria-pressed="false" aria-label="Play notched noise" disabled><svg class="ico ico-play" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9.5-5.5z"/></svg><svg class="ico ico-stop" viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="3" width="10" height="10" rx="1.5"/></svg><span class="lbl">Play notched noise</span></button>
       </div>
 
       <div class="status">
@@ -826,7 +838,7 @@
     $('btnNarrow').disabled = searchWidthIndex === WIDTH_LADDER.length - 1;
     $('btnStepDown').disabled = searchCenter <= FREQ_MIN + 0.05;
     $('btnStepUp').disabled = searchCenter >= FREQ_MAX - 0.05;
-    $('btnSearchPlay').textContent = isSemitone() ? 'Play tone' : 'Play band';
+    syncPlayButtons();
 
     var rawUp = searchCenter * Math.pow(2, currentWidth());
     var rawDown = searchCenter / Math.pow(2, currentWidth());
@@ -968,10 +980,12 @@
     liveSources.clear();
   }
 
+  var lastWatchTime = -1;
   function startWatchdog() {
     if (watchTimer) clearInterval(watchTimer);
     loudTicks = 0;
     idleTicks = 0;
+    lastWatchTime = -1;
     watchTimer = setInterval(watchdogTick, 40);
   }
 
@@ -991,7 +1005,11 @@
     if (peak > TRIP_PEAK || rms > TRIP_RMS) loudTicks++; else loudTicks = 0;
     if (loudTicks >= TRIP_TICKS) { safetyStop('too loud (peak ' + peak.toFixed(2) + ', rms ' + rms.toFixed(2) + ')'); return; }
     var shouldPlay = searchOn || !!noiseSource || testToneOn;
-    if (!shouldPlay && rms > TRIP_IDLE_RMS) idleTicks++; else idleTicks = 0;
+    // Only count fresh audio: if the audio clock hasn't moved since the last
+    // tick, the analyser still holds the pre-stop samples, not new sound.
+    var ct = audioCtx.currentTime, fresh = ct > lastWatchTime;
+    lastWatchTime = ct;
+    if (!shouldPlay && rms > TRIP_IDLE_RMS) { if (fresh) idleTicks++; } else idleTicks = 0;
     if (idleTicks >= TRIP_TICKS) safetyStop('sound while stopped');
   }
 
@@ -1022,10 +1040,7 @@
         navigator.audioSession.type = 'auto';
       }
     } catch (e) {}
-    $('btnSearchPlay').disabled = !accepted;
-    $('btnSearchStop').disabled = true;
-    $('btnNoisePlay').disabled = !accepted;
-    $('btnNoiseStop').disabled = true;
+    syncPlayButtons();
   }
 
   function safetyStop(reason) {
@@ -1284,8 +1299,7 @@
       searchGain.gain.exponentialRampToValueAtTime(level, t + 0.05);
       searchOn = true;
       searchBuiltWidth = searchWidthIndex;
-      $('btnSearchPlay').disabled = true;
-      $('btnSearchStop').disabled = false;
+      syncPlayButtons();
       $('pill1').classList.add('active');
       refreshSearchStatus();
       updateLabels();
@@ -1328,8 +1342,7 @@
       if (osc) liveSources.delete(osc);
       if (src) liveSources.delete(src);
     }, 60);
-    $('btnSearchPlay').disabled = !accepted;
-    $('btnSearchStop').disabled = true;
+    syncPlayButtons();
     if (!silent) setSearchStatus('Search stopped', false);
   }
 
@@ -1463,8 +1476,7 @@
       refreshPlan();
       if (!plan.slices.length) {
         setNoiseStatus('No slice around ' + formatHz(notchCenter) + ' fits this speaker.', false);
-        $('btnNoisePlay').disabled = !accepted;
-        $('btnNoiseStop').disabled = true;
+        syncPlayButtons();
         updateLabels();
         saveSettings();
         return;
@@ -1512,8 +1524,7 @@
       stepperActive = stepSlices.length >= 2;
       if (stepperActive) scheduleDwell(DWELL_MS);
 
-      $('btnNoisePlay').disabled = true;
-      $('btnNoiseStop').disabled = false;
+      syncPlayButtons();
       $('pill2').classList.add('active');
       $('pill1').classList.add('done');
       setNoiseStatus(sliceStatus(0), true);
@@ -1532,8 +1543,7 @@
     } catch (err) {
       teardownNoise();
       setNoiseStatus('Could not start audio: ' + (err && err.message ? err.message : err), false);
-      $('btnNoisePlay').disabled = !accepted;
-      $('btnNoiseStop').disabled = true;
+      syncPlayButtons();
     }
   }
 
@@ -1563,8 +1573,7 @@
     noiseGen++;
     fadeToken++;
     teardownNoise();
-    $('btnNoisePlay').disabled = !accepted;
-    $('btnNoiseStop').disabled = true;
+    syncPlayButtons();
     $('timerDisplay').hidden = true;
     if (!silent) setNoiseStatus('Session stopped', false);
   }
@@ -1774,13 +1783,35 @@
     } catch (e) {}
   }
 
+  // One toggle per step. Its look is derived from the real audio state, so it
+  // returns to Play whenever sound stops for any reason.
+  var btnShown = {};
+  function renderToggle(id, playing, playLabel) {
+    var b = $(id);
+    if (!btnShown) btnShown = {};
+    if (!b) return;
+    var label = playing ? 'Stop' : playLabel;
+    var key = (playing ? 1 : 0) + '|' + label + '|' + (accepted ? 1 : 0);
+    if (btnShown[id] === key) return;
+    btnShown[id] = key;
+    b.disabled = !accepted;
+    b.classList.toggle('is-playing', playing);
+    b.classList.toggle('primary', !playing);
+    b.setAttribute('aria-pressed', playing ? 'true' : 'false');
+    b.setAttribute('aria-label', label);
+    b.querySelector('.lbl').textContent = label;
+  }
+  function syncPlayButtons() {
+    renderToggle('btnSearchPlay', !!searchOn, isSemitone() ? 'Play tone' : 'Play band');
+    renderToggle('btnNoisePlay', !!noiseSource, 'Play notched noise');
+  }
+  window.__notchButtons = function () {
+    function st(id) { var b = $(id); return { label: b.querySelector('.lbl').textContent, pressed: b.getAttribute('aria-pressed'), playing: b.classList.contains('is-playing'), disabled: b.disabled }; }
+    return { search: st('btnSearchPlay'), noise: st('btnNoisePlay') };
+  };
+
   function enableAudioButtons(on) {
-    $('btnSearchPlay').disabled = !on || searchOn;
-    $('btnNoisePlay').disabled = !on || !!noiseSource;
-    if (!on) {
-      $('btnSearchStop').disabled = true;
-      $('btnNoiseStop').disabled = true;
-    }
+    syncPlayButtons();
   }
 
   acceptEl.addEventListener('click', function () {
@@ -1898,14 +1929,18 @@
   $('btnTestSoundInline').addEventListener('click', playTestSound);
   window.__notchTestTone = function () { return testToneOn; };
 
-  $('btnSearchPlay').addEventListener('click', maybeShowSilentNote);
-  $('btnNoisePlay').addEventListener('click', maybeShowSilentNote);
-  $('btnSearchPlay').addEventListener('click', startSearch);
+  // Toggle handlers: start (with the audio unlock inside startSearch /
+  // startNoise, same tap) or stop, based on the live state at tap time.
+  $('btnSearchPlay').addEventListener('click', function () {
+    if (searchOn) { stopSearch(false); sweepIfIdle(); syncPlayButtons(); return; }
+    maybeShowSilentNote();
+    startSearch();
+    syncPlayButtons();
+  });
   // Stop always ends everything this button owns, then sweeps any stray source.
   function sweepIfIdle() {
     setTimeout(function () { if (!searchOn && !noiseSource) killAllSources(); }, 120);
   }
-  $('btnSearchStop').addEventListener('click', function () { stopSearch(false); sweepIfIdle(); });
 
   $('btnLockFreq').addEventListener('click', function () {
     notchCenter = searchCenter;
@@ -1990,8 +2025,12 @@
     saveSettings();
   });
 
-  $('btnNoisePlay').addEventListener('click', startNoise);
-  $('btnNoiseStop').addEventListener('click', function () { stopNoise(false); sweepIfIdle(); });
+  $('btnNoisePlay').addEventListener('click', function () {
+    if (noiseSource) { stopNoise(false); sweepIfIdle(); syncPlayButtons(); return; }
+    maybeShowSilentNote();
+    startNoise();
+    syncPlayButtons();
+  });
 
   $('noiseWhite').addEventListener('click', function () {
     noiseColor = 'white';
@@ -2031,6 +2070,8 @@
     if (!stepperActive || !noiseSource || !stepDeadline || notchDragging || softFadeActive) return;
     $('noiseStatus').textContent = sliceStatus(stepIndex);
   }, 500);
+
+  setInterval(syncPlayButtons, 250);
 
   window.addEventListener('resize', drawNotchViz);
   window.__notchSearch = function () { return { widthIndex: searchWidthIndex, center: searchCenter }; };
