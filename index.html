@@ -387,7 +387,11 @@
       font-size: .82rem;
       color: var(--muted);
       margin-top: .75rem;
+      line-height: 1.45;
+      /* two lines reserved so status text changes don't move what's below */
+      min-height: 2.9em;
     }
+    @media (max-width: 360px) { .status { min-height: 4.35em; } }
     .dot {
       width: .55rem;
       height: .55rem;
@@ -431,6 +435,22 @@
       margin: .4rem 0 .8rem;
       color: var(--text);
     }
+
+    /* Step 2 play row: toggle + countdown share one line. The countdown's
+       space is always reserved (hidden = invisible, not removed) and the
+       toggle has a fixed share of the row, so nothing moves on play/stop. */
+    .row.play-row { flex-wrap: nowrap; }
+    .play-row .btn.toggle { flex: 1 1 0; min-width: 0; white-space: nowrap; }
+    .timer-inline {
+      flex: 0 0 4.6rem;
+      font-size: 1.5rem;
+      line-height: 44px;
+      font-variant-numeric: tabular-nums;
+      font-weight: 650;
+      text-align: right;
+      color: var(--text);
+    }
+    .timer-inline[hidden] { display: block; visibility: hidden; }
 
     footer.foot {
       text-align: center;
@@ -562,11 +582,10 @@
         </div>
       </div>
 
-      <div class="timer-big" id="timerDisplay" hidden>00:00</div>
-
       <p class="play-warn">Volume at or just over covering the tinnitus.</p>
-      <div class="row">
+      <div class="row play-row">
         <button type="button" class="btn primary toggle" id="btnNoisePlay" aria-pressed="false" aria-label="Play notched noise" disabled><svg class="ico ico-play" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9.5-5.5z"/></svg><svg class="ico ico-stop" viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="3" width="10" height="10" rx="1.5"/></svg><span class="lbl">Play notched noise</span></button>
+        <div class="timer-inline" id="timerDisplay" aria-label="Session time left" hidden>00:00</div>
       </div>
 
       <div class="status">
@@ -777,10 +796,14 @@
     notchSlider.value = String(freqToSlider(notchCenter));
   }
 
+  var knownRate = 0;
   function refreshPlan() {
-    var sr = (audioCtx && audioCtx.sampleRate) ? audioCtx.sampleRate : 48000;
+    // Remember the device rate so the plan text (above the Step 2 button)
+    // doesn't change length when audio starts again after a stop/hide.
+    if (audioCtx && audioCtx.sampleRate) knownRate = audioCtx.sampleRate;
+    var sr = knownRate || 48000;
     plan = therapyPlan(notchCenter, sr, THERAPY_W);
-    plan.preview = !(audioCtx && audioCtx.sampleRate);
+    plan.preview = !knownRate;
   }
 
   function searchEdgeText() {
@@ -1819,6 +1842,8 @@
     unlockAudio();
     enableAudioButtons(true);
     $('disclaimer').hidden = true;
+    refreshPlan();
+    updateLabels();
     refreshSearchStatus();
     setNoiseStatus('Ready — press Play notched noise', false);
     saveSettings();
