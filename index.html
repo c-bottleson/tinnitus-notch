@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0d1117" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob: data:; connect-src 'self'; base-uri 'self'; form-action 'self'" />
   <meta name="description" content="Notch listening educational audio tool. Find a tinnitus pitch from 1 kHz to 20 kHz, then play half-octave notched noise around that pitch. Not a medical device." />
   <title>Notch Listening — Ideator Prototype</title>
   <style>
@@ -90,6 +90,102 @@
       accent-color: var(--warn);
       flex-shrink: 0;
     }
+
+    .consent {
+      background: #1a1208;
+      border: 2px solid var(--warn);
+      color: #f0c674;
+      border-radius: var(--radius);
+      padding: 1rem 1.1rem 1.1rem;
+      margin: 0 0 1.1rem;
+      font-size: .9rem;
+      box-shadow: var(--shadow);
+    }
+    .consent h2 { margin: 0 0 .4rem; font-size: 1.1rem; color: #ffd98a; }
+    .consent p { margin: 0 0 .9rem; }
+    .consent .btn-agree {
+      display: block;
+      width: 100%;
+      min-height: 3.25rem;
+      font-size: 1.1rem;
+      font-weight: 700;
+      border-radius: 12px;
+      border: none;
+      color: #1a1208;
+      background: linear-gradient(180deg, #ffd66b, #e0a526);
+      cursor: pointer;
+      box-shadow: 0 4px 14px rgba(224,165,38,.35);
+    }
+    .consent .btn-agree:active { transform: translateY(1px); }
+    .audio-tip { font-size: .78rem; color: var(--muted); margin: .5rem 0 0; }
+
+    .band-slider {
+      position: relative;
+      height: 2.6rem;
+      margin-top: .1rem;
+      --c: .9;
+      --w: .1;
+      --thumb: 44px;
+    }
+    .band-slider .band-track {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 50%;
+      height: 6px;
+      margin-top: -3px;
+      border-radius: 3px;
+      background: #3a4250;
+      pointer-events: none;
+    }
+    .band-slider .band-win {
+      position: absolute;
+      top: 50%;
+      height: 2rem;
+      margin-top: -1rem;
+      left: calc(var(--thumb) / 2 + var(--c) * (100% - var(--thumb)));
+      width: max(6px, calc(var(--w) * (100% - var(--thumb))));
+      transform: translateX(-50%);
+      border-radius: 8px;
+      background: rgba(88,166,255,.38);
+      border: 2px solid #fff;
+      box-shadow: 0 1px 6px rgba(0,0,0,.5);
+      pointer-events: none;
+      transition: width .15s ease;
+    }
+    .band-slider .band-win::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 3px;
+      bottom: 3px;
+      width: 2px;
+      margin-left: -1px;
+      background: #fff;
+      border-radius: 1px;
+    }
+    .band-slider input[type="range"].band-range {
+      -webkit-appearance: none;
+      appearance: none;
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      background: transparent;
+      touch-action: none;
+    }
+    .band-range::-webkit-slider-runnable-track { height: 100%; background: transparent; border: none; }
+    .band-range::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: var(--thumb, 44px);
+      height: 100%;
+      background: transparent;
+      border: none;
+    }
+    .band-range::-moz-range-track { height: 100%; background: transparent; border: none; }
+    .band-range::-moz-range-thumb { width: 44px; height: 100%; background: transparent; border: none; }
+    .band-range:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
 
     .steps {
       display: flex;
@@ -324,18 +420,16 @@
 </head>
 <body>
   <div class="wrap">
+    <section class="consent" id="disclaimer" role="region" aria-label="Agree before using sound">
+      <h2>Before you play any sound</h2>
+      <p><strong>Not a medical device.</strong> Not intended to diagnose, treat, cure, or prevent any condition. Talk to an audiologist about tinnitus care. Keep the volume low and comfortable, and stop if you feel any discomfort or the tinnitus gets worse.</p>
+      <button type="button" class="btn-agree" id="acceptDisclaimer">I agree · turn on sound</button>
+    </section>
+
     <header class="app-header">
       <h1>Notch Listening</h1>
       <div class="tag">Settings stay in this browser.</div>
     </header>
-
-    <section class="banner" id="disclaimer" role="note" aria-label="Not a medical device">
-      <strong>Not a medical device.</strong> Not intended to diagnose, treat, cure, or prevent any condition. Talk to an audiologist about tinnitus care. Keep the volume low and comfortable, and stop if you feel any discomfort or the tinnitus gets worse.
-      <label class="accept">
-        <input type="checkbox" id="acceptDisclaimer" />
-        <span>I understand.</span>
-      </label>
-    </section>
 
     <div class="steps" aria-hidden="true">
       <div class="step-pill active" id="pill1">1 · Find pitch</div>
@@ -352,8 +446,12 @@
       </div>
 
       <label class="field">
-        <span class="label"><span>Search center</span><span class="val" id="searchCenterLabel">15,000 Hz</span></span>
-        <input type="range" id="searchCenter" min="0" max="100000" step="1" value="90397" aria-label="Search center, 1 kHz to 20 kHz" />
+        <span class="label"><span>Search center · box = band width</span><span class="val" id="searchCenterLabel">15,000 Hz</span></span>
+        <div class="band-slider" id="searchBand">
+          <div class="band-track"></div>
+          <div class="band-win" id="searchBandWin"></div>
+          <input type="range" class="band-range" id="searchCenter" min="0" max="100000" step="1" value="90397" aria-label="Search center, 1 kHz to 20 kHz" />
+        </div>
       </label>
 
       <label class="field">
@@ -372,10 +470,10 @@
       <div class="row">
         <span style="font-size:.82rem;color:var(--muted)">Width</span>
         <div class="seg" id="widthSeg" role="group" aria-label="Search width">
-          <button type="button" class="active" data-w="0">1/2</button>
-          <button type="button" data-w="1">1/4</button>
-          <button type="button" data-w="2">1/8</button>
           <button type="button" data-w="3">1 note</button>
+          <button type="button" data-w="2">1/8</button>
+          <button type="button" data-w="1">1/4</button>
+          <button type="button" class="active" data-w="0">1/2</button>
         </div>
       </div>
 
@@ -387,8 +485,9 @@
 
       <div class="status">
         <span class="dot" id="searchDot"></span>
-        <span id="searchStatus" role="status">Accept the disclaimer to enable audio</span>
+        <span id="searchStatus" role="status">Tap I agree at the top to turn on sound</span>
       </div>
+      <p class="audio-tip">No sound? Turn the volume up on the side of the phone and tap Play again.</p>
     </section>
 
     <section class="card" id="step2" aria-labelledby="step2-title">
@@ -681,6 +780,10 @@
   function updateLabels() {
     var e = bandEdges(searchCenter, currentWidth());
     $('searchCenterLabel').textContent = formatHz(searchCenter);
+    var span = Math.log2(FREQ_MAX / FREQ_MIN);
+    var bandEl = $('searchBand');
+    bandEl.style.setProperty('--c', String(Math.log2(searchCenter / FREQ_MIN) / span));
+    bandEl.style.setProperty('--w', String(currentWidth() / span));
     $('searchDisplay').innerHTML = formatHz(searchCenter) + '<small>' + searchEdgeText() + '</small>';
     searchSlider.setAttribute('aria-valuetext', Math.round(searchCenter) + ' hertz');
     $('searchVolLabel').textContent = searchVolEl.value + '%';
@@ -733,7 +836,7 @@
       setSearchStatus(msg, true);
       return;
     }
-    if (!accepted) setSearchStatus('Accept the disclaimer to enable audio', false);
+    if (!accepted) setSearchStatus('Tap I agree at the top to turn on sound', false);
     else setSearchStatus('Ready · ' + searchEdgeText(), false);
   }
 
@@ -750,14 +853,129 @@
     return msg;
   }
 
-  function ensureAudio() {
-    if (!audioCtx) {
+  // iPhone audio. Everything here runs synchronously inside the tap.
+  // 1. A looping silent <audio playsinline> element moves the iOS audio
+  //    session to "playback", so Web Audio is heard even with the ringer
+  //    switch on silent. navigator.audioSession does the same on iOS 17+.
+  // 2. The AudioContext is created or resumed in the tap, including the
+  //    iOS-only 'interrupted' state, and a 1-sample buffer is started in the
+  //    same tap. The real graph is then built and started in the same tap,
+  //    not later in a promise callback, which iOS WebKit can leave silent.
+  let masterGain = null;
+  let analyser = null;
+  let keepAliveEl = null;
+
+  function silentWavUrl() {
+    var sr = 8000, n = 4000;
+    var buf = new ArrayBuffer(44 + n);
+    var v = new DataView(buf);
+    function str(o, t) { for (var i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); }
+    str(0, 'RIFF'); v.setUint32(4, 36 + n, true); str(8, 'WAVE');
+    str(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, sr, true); v.setUint32(28, sr, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true);
+    str(36, 'data'); v.setUint32(40, n, true);
+    for (var i = 0; i < n; i++) v.setUint8(44 + i, 128);
+    return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+  }
+
+  function startKeepAlive() {
+    try {
+      if (navigator.audioSession && navigator.audioSession.type !== 'playback') {
+        navigator.audioSession.type = 'playback';
+      }
+    } catch (e) {}
+    try {
+      if (!keepAliveEl) {
+        keepAliveEl = document.createElement('audio');
+        keepAliveEl.setAttribute('playsinline', '');
+        keepAliveEl.setAttribute('webkit-playsinline', '');
+        keepAliveEl.loop = true;
+        keepAliveEl.preload = 'auto';
+        keepAliveEl.src = silentWavUrl();
+      }
+      if (keepAliveEl.paused) {
+        var p = keepAliveEl.play();
+        if (p && p.catch) p.catch(function () {});
+      }
+    } catch (e) {}
+  }
+
+  function buildMaster() {
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = 1;
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 2048;
+    masterGain.connect(audioCtx.destination);
+    masterGain.connect(analyser);
+  }
+
+  function unlockAudio() {
+    startKeepAlive();
+    if (!audioCtx || audioCtx.state === 'closed') {
       var AC = window.AudioContext || window.webkitAudioContext;
       audioCtx = new AC();
+      audioCtx.onstatechange = onCtxState;
+      buildMaster();
     }
-    if (audioCtx.state === 'suspended') return audioCtx.resume();
-    return Promise.resolve();
+    if (audioCtx.state !== 'running') {
+      try {
+        var r = audioCtx.resume();
+        if (r && r.catch) r.catch(function () {});
+      } catch (e) {}
+    }
+    try {
+      var b = audioCtx.createBuffer(1, 1, audioCtx.sampleRate);
+      var s = audioCtx.createBufferSource();
+      s.buffer = b;
+      s.connect(audioCtx.destination);
+      s.start(0);
+    } catch (e) {}
   }
+
+  function onCtxState() {
+    if (!audioCtx) return;
+    if (audioCtx.state !== 'running' && (searchOn || noiseSource)) {
+      if (searchOn) setSearchStatus('Sound paused by the phone · tap Play band again', false);
+      if (noiseSource) setNoiseStatus('Sound paused by the phone · tap Play again', false);
+    } else if (audioCtx.state === 'running') {
+      if (searchOn) refreshSearchStatus();
+    }
+  }
+
+  // If iOS interrupted the context (call, Siri, another app), the next tap brings it back.
+  function resumeOnTap() {
+    if (!audioCtx || audioCtx.state === 'running' || audioCtx.state === 'closed') return;
+    if (!searchOn && !noiseSource) return;
+    startKeepAlive();
+    try { audioCtx.resume().catch(function () {}); } catch (e) {}
+  }
+  document.addEventListener('touchend', resumeOnTap, true);
+  document.addEventListener('click', resumeOnTap, true);
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') resumeOnTap();
+  });
+
+  function checkRunningSoon(which) {
+    setTimeout(function () {
+      if (!audioCtx || audioCtx.state === 'running') return;
+      if (which === 'search' && searchOn) setSearchStatus('The phone has not started sound yet · tap Play band again', false);
+      if (which === 'noise' && noiseSource) setNoiseStatus('The phone has not started sound yet · tap Play again', false);
+    }, 700);
+  }
+
+  // Exposed for automated checks: context state and output level.
+  window.__notchAudio = {
+    state: function () { return audioCtx ? audioCtx.state : 'none'; },
+    sampleRate: function () { return audioCtx ? audioCtx.sampleRate : 0; },
+    rms: function () {
+      if (!analyser) return 0;
+      var a = new Float32Array(analyser.fftSize);
+      analyser.getFloatTimeDomainData(a);
+      var sum = 0;
+      for (var i = 0; i < a.length; i++) sum += a[i] * a[i];
+      return Math.sqrt(sum / a.length);
+    }
+  };
 
   function disconnectNode(n) {
     if (!n) return;
@@ -845,12 +1063,12 @@
 
   function startSearch() {
     if (!accepted) {
-      setSearchStatus('Accept the disclaimer first', false);
+      setSearchStatus('Tap I agree at the top first', false);
       return;
     }
-    var gen = ++searchGen;
-    ensureAudio().then(function () {
-      if (gen !== searchGen) return;
+    ++searchGen;
+    try {
+      unlockAudio();
       silenceSearchNow();
       var wasNoise = !!noiseSource;
       stopNoise(true);
@@ -903,7 +1121,7 @@
         level = searchLevel(aud);
         searchSource.start();
       }
-      searchGain.connect(audioCtx.destination);
+      searchGain.connect(masterGain);
       var t = audioCtx.currentTime;
       searchGain.gain.setValueAtTime(0.0001, t);
       searchGain.gain.exponentialRampToValueAtTime(level, t + 0.05);
@@ -914,10 +1132,13 @@
       refreshSearchStatus();
       updateLabels();
       saveSettings();
-    }).catch(function () {
+      checkRunningSoon('search');
+    } catch (err) {
       searchOn = false;
-      setSearchStatus('Could not start audio', false);
-    });
+      silenceSearchNow();
+      setSearchStatus('Could not start audio: ' + (err && err.message ? err.message : err), false);
+      enableAudioButtons(accepted);
+    }
   }
 
   function stopSearch(silent) {
@@ -1058,13 +1279,13 @@
 
   function startNoise() {
     if (!accepted) {
-      setNoiseStatus('Accept the disclaimer first', false);
+      setNoiseStatus('Tap I agree at the top first', false);
       return;
     }
     fadeToken++;
-    var gen = ++noiseGen;
-    ensureAudio().then(function () {
-      if (gen !== noiseGen) return;
+    ++noiseGen;
+    try {
+      unlockAudio();
       teardownNoise();
       var wasSearch = searchOn;
       stopSearch(true);
@@ -1113,7 +1334,7 @@
       noiseSource.connect(hpFilters[0]);
       sumGain.connect(shelfFilter);
       shelfFilter.connect(noiseGain);
-      noiseGain.connect(audioCtx.destination);
+      noiseGain.connect(masterGain);
       noiseSource.start();
 
       stepSlices = plan.slices;
@@ -1137,9 +1358,13 @@
       }
       updateLabels();
       saveSettings();
-    }).catch(function () {
-      setNoiseStatus('Could not start audio', false);
-    });
+      checkRunningSoon('noise');
+    } catch (err) {
+      teardownNoise();
+      setNoiseStatus('Could not start audio: ' + (err && err.message ? err.message : err), false);
+      $('btnNoisePlay').disabled = !accepted;
+      $('btnNoiseStop').disabled = true;
+    }
   }
 
   function softStopNoise() {
@@ -1373,7 +1598,6 @@
       }
       if (d.accepted) {
         accepted = true;
-        acceptEl.checked = true;
         enableAudioButtons(true);
         $('disclaimer').hidden = true;
       }
@@ -1389,19 +1613,13 @@
     }
   }
 
-  acceptEl.addEventListener('change', function () {
-    accepted = !!acceptEl.checked;
-    enableAudioButtons(accepted);
-    $('disclaimer').hidden = accepted;
-    if (accepted) {
-      refreshSearchStatus();
-      setNoiseStatus('Ready — press Play notched noise', false);
-    } else {
-      stopSearch(true);
-      stopNoise(true);
-      setSearchStatus('Accept the disclaimer to enable audio', false);
-      setNoiseStatus('Session idle', false);
-    }
+  acceptEl.addEventListener('click', function () {
+    accepted = true;
+    unlockAudio();
+    enableAudioButtons(true);
+    $('disclaimer').hidden = true;
+    refreshSearchStatus();
+    setNoiseStatus('Ready — press Play notched noise', false);
     saveSettings();
   });
 
@@ -1580,13 +1798,14 @@
   }, 500);
 
   window.addEventListener('resize', drawNotchViz);
+  window.__notchSearch = function () { return { widthIndex: searchWidthIndex, center: searchCenter }; };
 
   enableAudioButtons(false);
   loadSettings();
   refreshPlan();
   pushSliders();
   updateLabels();
-  if (!accepted) setSearchStatus('Accept the disclaimer to enable audio', false);
+  if (!accepted) setSearchStatus('Tap I agree at the top to turn on sound', false);
   else refreshSearchStatus();
 })();
   </script>
