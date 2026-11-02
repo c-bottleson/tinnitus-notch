@@ -487,7 +487,7 @@
         <span class="dot" id="searchDot"></span>
         <span id="searchStatus" role="status">Tap I agree at the top to turn on sound</span>
       </div>
-      <p class="audio-tip">No sound? Turn the volume up on the side of the phone and tap Play again.</p>
+      <p class="audio-tip">No sound? Flip the ringer switch off silent, turn the volume up, and tap Play again. Sound stops whenever you leave the page.</p>
     </section>
 
     <section class="card" id="step2" aria-labelledby="step2-title">
@@ -853,69 +853,185 @@
     return msg;
   }
 
-  // iPhone audio. Everything here runs synchronously inside the tap.
-  // 1. A looping silent <audio playsinline> element moves the iOS audio
-  //    session to "playback", so Web Audio is heard even with the ringer
-  //    switch on silent. navigator.audioSession does the same on iOS 17+.
-  // 2. The AudioContext is created or resumed in the tap, including the
-  //    iOS-only 'interrupted' state, and a 1-sample buffer is started in the
-  //    same tap. The real graph is then built and started in the same tap,
-  //    not later in a promise callback, which iOS WebKit can leave silent.
+  // iPhone audio, with ear safety first.
+  // - The AudioContext is created or resumed synchronously inside the tap
+  //   (including iOS 'interrupted'), and the graph is built in that same tap.
+  // - No hidden keep-alive media element and no audioSession override: they
+  //   can keep iOS audio alive after the page goes away.
+  // - Output path: sources -> masterGain -> limiter -> outGain (cap) -> speaker.
+  //   A watchdog reads the pre-limiter signal every 40 ms and kills all sound
+  //   on NaN/Infinity, on sustained loud output, or on any sound while
+  //   nothing is supposed to be playing.
+  // - Leaving or hiding the page stops everything and closes the context.
+  //   Nothing restarts until the user taps Play again.
+  const OUT_CAP = 0.7;
+  const TRIP_PEAK = 0.95;
+  const TRIP_RMS = 0.3;
+  const TRIP_IDLE_RMS = 0.01;
+  const TRIP_TICKS = 3;
   let masterGain = null;
+  let limiter = null;
+  let outGain = null;
+  let watchTap = null;
   let analyser = null;
-  let keepAliveEl = null;
+  let watchTimer = null;
+  let loudTicks = 0;
+  let idleTicks = 0;
+  let liveSources = new Set();
+  let safetyTrips = 0;
+  let lastTrip = '';
+  let watchBuf = null;
 
-  function silentWavUrl() {
-    var sr = 8000, n = 4000;
-    var buf = new ArrayBuffer(44 + n);
-    var v = new DataView(buf);
-    function str(o, t) { for (var i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); }
-    str(0, 'RIFF'); v.setUint32(4, 36 + n, true); str(8, 'WAVE');
-    str(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
-    v.setUint32(24, sr, true); v.setUint32(28, sr, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true);
-    str(36, 'data'); v.setUint32(40, n, true);
-    for (var i = 0; i < n; i++) v.setUint8(44 + i, 128);
-    return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
-  }
-
-  function startKeepAlive() {
-    try {
-      if (navigator.audioSession && navigator.audioSession.type !== 'playback') {
-        navigator.audioSession.type = 'playback';
-      }
-    } catch (e) {}
-    try {
-      if (!keepAliveEl) {
-        keepAliveEl = document.createElement('audio');
-        keepAliveEl.setAttribute('playsinline', '');
-        keepAliveEl.setAttribute('webkit-playsinline', '');
-        keepAliveEl.loop = true;
-        keepAliveEl.preload = 'auto';
-        keepAliveEl.src = silentWavUrl();
-      }
-      if (keepAliveEl.paused) {
-        var p = keepAliveEl.play();
-        if (p && p.catch) p.catch(function () {});
-      }
-    } catch (e) {}
+  let ceiling = null;
+  function ceilingCurve() {
+    var n = 4097, c = new Float32Array(n), knee = 0.45, top = 0.6;
+    for (var i = 0; i < n; i++) {
+      var x = (i / (n - 1)) * 2 - 1, ax = Math.abs(x), y;
+      if (ax <= knee) y = ax;
+      else y = knee + (top - knee) * Math.tanh((ax - knee) / (top - knee));
+      c[i] = x < 0 ? -y : y;
+    }
+    return c;
   }
 
   function buildMaster() {
     masterGain = audioCtx.createGain();
     masterGain.gain.value = 1;
+    watchTap = audioCtx.createAnalyser();
+    watchTap.fftSize = 2048;
+    limiter = audioCtx.createDynamicsCompressor();
+    // Threshold near 0 dBFS so the compressor's automatic makeup gain stays
+    // under 1 dB; it only catches peaks. The wave shaper after it is a hard
+    // ceiling: linear to 0.45, soft to a maximum of 0.6, never above.
+    limiter.threshold.value = -2;
+    limiter.knee.value = 0;
+    limiter.ratio.value = 20;
+    limiter.attack.value = 0.002;
+    limiter.release.value = 0.12;
+    outGain = audioCtx.createGain();
+    outGain.gain.value = OUT_CAP;
+    ceiling = audioCtx.createWaveShaper();
+    ceiling.curve = ceilingCurve();
     analyser = audioCtx.createAnalyser();
     analyser.fftSize = 2048;
-    masterGain.connect(audioCtx.destination);
-    masterGain.connect(analyser);
+    masterGain.connect(watchTap);
+    masterGain.connect(limiter);
+    limiter.connect(outGain);
+    outGain.connect(ceiling);
+    ceiling.connect(audioCtx.destination);
+    ceiling.connect(analyser);
+    watchBuf = new Float32Array(watchTap.fftSize);
+    startWatchdog();
   }
 
+  function trackSource(n) {
+    liveSources.add(n);
+    n.onended = function () { liveSources.delete(n); };
+    return n;
+  }
+
+  function killAllSources() {
+    liveSources.forEach(function (n) {
+      try { n.stop(); } catch (e) {}
+      disconnectNode(n);
+    });
+    liveSources.clear();
+  }
+
+  function startWatchdog() {
+    if (watchTimer) clearInterval(watchTimer);
+    loudTicks = 0;
+    idleTicks = 0;
+    watchTimer = setInterval(watchdogTick, 40);
+  }
+
+  function watchdogTick() {
+    if (!audioCtx || !watchTap || audioCtx.state === 'closed') return;
+    watchTap.getFloatTimeDomainData(watchBuf);
+    var sum = 0, peak = 0, bad = false;
+    for (var i = 0; i < watchBuf.length; i++) {
+      var v = watchBuf[i];
+      if (!isFinite(v)) { bad = true; break; }
+      var a = v < 0 ? -v : v;
+      if (a > peak) peak = a;
+      sum += v * v;
+    }
+    if (bad) { safetyStop('non-finite output'); return; }
+    var rms = Math.sqrt(sum / watchBuf.length);
+    if (peak > TRIP_PEAK || rms > TRIP_RMS) loudTicks++; else loudTicks = 0;
+    if (loudTicks >= TRIP_TICKS) { safetyStop('too loud (peak ' + peak.toFixed(2) + ', rms ' + rms.toFixed(2) + ')'); return; }
+    var shouldPlay = searchOn || !!noiseSource;
+    if (!shouldPlay && rms > TRIP_IDLE_RMS) idleTicks++; else idleTicks = 0;
+    if (idleTicks >= TRIP_TICKS) safetyStop('sound while stopped');
+  }
+
+  // Stops every sound, mutes the output at once and closes the context.
+  function hardStopAll() {
+    if (outGain && audioCtx) {
+      try {
+        outGain.gain.cancelScheduledValues(0);
+        outGain.gain.setValueAtTime(0, audioCtx.currentTime);
+        outGain.gain.value = 0;
+      } catch (e) {}
+    }
+    if (searchOn || searchGain) stopSearch(true);
+    if (noiseSource || noiseGain) stopNoise(true);
+    killAllSources();
+    if (watchTimer) { clearInterval(watchTimer); watchTimer = null; }
+    var c = audioCtx;
+    audioCtx = null;
+    masterGain = null; limiter = null; outGain = null; ceiling = null; watchTap = null; analyser = null;
+    if (c) {
+      try { c.onstatechange = null; } catch (e) {}
+      try { var p = c.close(); if (p && p.catch) p.catch(function () {}); } catch (e) {}
+    }
+    try {
+      if (navigator.audioSession && navigator.audioSession.type && navigator.audioSession.type !== 'auto') {
+        navigator.audioSession.type = 'auto';
+      }
+    } catch (e) {}
+    $('btnSearchPlay').disabled = !accepted;
+    $('btnSearchStop').disabled = true;
+    $('btnNoisePlay').disabled = !accepted;
+    $('btnNoiseStop').disabled = true;
+  }
+
+  function safetyStop(reason) {
+    safetyTrips++;
+    lastTrip = reason;
+    hardStopAll();
+    setSearchStatus('Sound stopped for safety · tap Play to start again', false);
+    setNoiseStatus('Sound stopped for safety · tap Play to start again', false);
+    $('searchDot').className = 'dot warn';
+    $('noiseDot').className = 'dot warn';
+  }
+
+  function stopForPageLeave() {
+    var was = searchOn || !!noiseSource;
+    hardStopAll();
+    if (was) {
+      setSearchStatus('Sound stopped when you left the page · tap Play to start again', false);
+      setNoiseStatus('Sound stopped when you left the page · tap Play to start again', false);
+    }
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') stopForPageLeave();
+  });
+  window.addEventListener('pagehide', stopForPageLeave);
+  window.addEventListener('beforeunload', stopForPageLeave);
+
   function unlockAudio() {
-    startKeepAlive();
     if (!audioCtx || audioCtx.state === 'closed') {
       var AC = window.AudioContext || window.webkitAudioContext;
       audioCtx = new AC();
       audioCtx.onstatechange = onCtxState;
       buildMaster();
+    }
+    if (outGain) {
+      try {
+        outGain.gain.cancelScheduledValues(0);
+        outGain.gain.setValueAtTime(OUT_CAP, audioCtx.currentTime);
+      } catch (e) {}
     }
     if (audioCtx.state !== 'running') {
       try {
@@ -942,19 +1058,6 @@
     }
   }
 
-  // If iOS interrupted the context (call, Siri, another app), the next tap brings it back.
-  function resumeOnTap() {
-    if (!audioCtx || audioCtx.state === 'running' || audioCtx.state === 'closed') return;
-    if (!searchOn && !noiseSource) return;
-    startKeepAlive();
-    try { audioCtx.resume().catch(function () {}); } catch (e) {}
-  }
-  document.addEventListener('touchend', resumeOnTap, true);
-  document.addEventListener('click', resumeOnTap, true);
-  document.addEventListener('visibilitychange', function () {
-    if (document.visibilityState === 'visible') resumeOnTap();
-  });
-
   function checkRunningSoon(which) {
     setTimeout(function () {
       if (!audioCtx || audioCtx.state === 'running') return;
@@ -963,10 +1066,31 @@
     }, 700);
   }
 
+  // Smooth, cancel-then-target automation so fast drags never pile up events
+  // or jump a filter coefficient in one step.
+  function smoothSet(param, value, tau) {
+    if (!audioCtx || !isFinite(value)) return;
+    var t = audioCtx.currentTime;
+    try {
+      var cur = param.value;
+      param.cancelScheduledValues(t);
+      if (isFinite(cur)) param.setValueAtTime(cur, t);
+      param.setTargetAtTime(value, t, tau);
+    } catch (e) {}
+  }
+
+  function safeFilterHz(f) {
+    var top = audioCtx ? Math.min(audioCtx.sampleRate * 0.45, audioCtx.sampleRate / 2 - NYQUIST_MARGIN) : 20000;
+    if (!isFinite(f)) f = 1000;
+    return clamp(f, 30, top);
+  }
+
   // Exposed for automated checks: context state and output level.
   window.__notchAudio = {
     state: function () { return audioCtx ? audioCtx.state : 'none'; },
     sampleRate: function () { return audioCtx ? audioCtx.sampleRate : 0; },
+    trips: function () { return { count: safetyTrips, last: lastTrip }; },
+    liveSources: function () { return liveSources.size; },
     rms: function () {
       if (!analyser) return 0;
       var a = new Float32Array(analyser.fftSize);
@@ -985,16 +1109,16 @@
   function makeBiquad(type, freq) {
     var f = audioCtx.createBiquadFilter();
     f.type = type;
-    f.frequency.value = freq;
-    f.Q.value = BIQUAD_Q;
+    f.frequency.value = safeFilterHz(freq);
+    f.Q.value = BIQUAD_Q; // fixed, gentle Q; never raised for narrow widths
     return f;
   }
 
   function audibleSearchEdges(edges) {
     var maxHi = playableHiMax(audioCtx.sampleRate);
     if (edges.lo >= maxHi) return null;
-    var lo = Math.max(20, edges.lo);
-    var hi = Math.min(maxHi, edges.hi);
+    var lo = safeFilterHz(Math.max(20, edges.lo));
+    var hi = safeFilterHz(Math.min(maxHi, edges.hi));
     if (!(hi > lo)) return null;
     return {
       lo: lo,
@@ -1005,10 +1129,10 @@
 
   function searchLevel(aud) {
     var vol = (+searchVolEl.value) / 100;
-    if (isSemitone()) return Math.max(0.0001, vol * 0.22);
+    if (isSemitone()) return clamp(vol * 0.22, 0.0001, 0.1);
     var bw = Math.max(1, aud.hi - aud.lo);
     var makeup = clamp(Math.sqrt((audioCtx.sampleRate / 2) / bw), 1, 5);
-    return Math.max(0.0001, vol * 0.16 * makeup);
+    return clamp(vol * 0.16 * makeup, 0.0001, 0.33);
   }
 
   function makeWhiteBuffer(seconds) {
@@ -1069,7 +1193,8 @@
     ++searchGen;
     try {
       unlockAudio();
-      silenceSearchNow();
+      if (searchGain || searchOsc || searchSource) stopSearch(true);
+      ++searchGen;
       var wasNoise = !!noiseSource;
       stopNoise(true);
       if (wasNoise) setNoiseStatus('Session stopped', false);
@@ -1087,9 +1212,9 @@
           updateLabels();
           return;
         }
-        searchOsc = audioCtx.createOscillator();
+        searchOsc = trackSource(audioCtx.createOscillator());
         searchOsc.type = 'sine';
-        searchOsc.frequency.value = searchCenter;
+        searchOsc.frequency.value = clamp(searchCenter, FREQ_MIN, maxTone);
         searchOsc.connect(searchGain);
         level = searchLevel(null);
         searchOsc.start();
@@ -1106,7 +1231,7 @@
         }
         searchAudible = aud;
         var buf = makeWhiteBuffer(2);
-        searchSource = audioCtx.createBufferSource();
+        searchSource = trackSource(audioCtx.createBufferSource());
         searchSource.buffer = buf;
         searchSource.loop = true;
         for (var i = 0; i < 4; i++) {
@@ -1126,6 +1251,7 @@
       searchGain.gain.setValueAtTime(0.0001, t);
       searchGain.gain.exponentialRampToValueAtTime(level, t + 0.05);
       searchOn = true;
+      searchBuiltWidth = searchWidthIndex;
       $('btnSearchPlay').disabled = true;
       $('btnSearchStop').disabled = false;
       $('pill1').classList.add('active');
@@ -1167,25 +1293,37 @@
       try { if (osc) osc.stop(); } catch (e) {}
       try { if (src) src.stop(); } catch (e) {}
       nodes.forEach(disconnectNode);
+      if (osc) liveSources.delete(osc);
+      if (src) liveSources.delete(src);
     }, 60);
     $('btnSearchPlay').disabled = !accepted;
     $('btnSearchStop').disabled = true;
     if (!silent) setSearchStatus('Search stopped', false);
   }
 
+  // Width changes rebuild the chain with a short fade instead of retuning
+  // live filters across a big jump. Center moves are throttled to one update
+  // per animation frame and use cancel-then-target smoothing.
+  let searchBuiltWidth = -1;
+  let searchSyncRaf = null;
+  function scheduleSearchSync() {
+    if (searchSyncRaf) return;
+    searchSyncRaf = requestAnimationFrame(function () {
+      searchSyncRaf = null;
+      syncSearchAudio();
+    });
+  }
+
   function syncSearchAudio() {
     if (!searchOn || !audioCtx) return;
-    var wantTone = isSemitone();
-    var haveTone = !!searchOsc;
-    if (wantTone !== haveTone) {
+    if (searchBuiltWidth !== searchWidthIndex) {
       startSearch();
       return;
     }
-    var t = audioCtx.currentTime;
-    if (wantTone && searchOsc) {
-      var maxTone = audioCtx.sampleRate / 2 - 1;
-      searchOsc.frequency.setTargetAtTime(Math.min(searchCenter, maxTone), t, 0.03);
-      if (searchGain) searchGain.gain.setTargetAtTime(searchLevel(null), t, 0.03);
+    if (isSemitone() && searchOsc) {
+      var maxTone = audioCtx.sampleRate / 2 - NYQUIST_MARGIN;
+      smoothSet(searchOsc.frequency, clamp(searchCenter, FREQ_MIN, maxTone), 0.03);
+      if (searchGain) smoothSet(searchGain.gain, searchLevel(null), 0.03);
       searchAudible = null;
       refreshSearchStatus();
       return;
@@ -1194,27 +1332,26 @@
     var aud = audibleSearchEdges(edges);
     if (!aud) {
       setSearchStatus('This band is above what this device can play.', false);
+      if (searchGain) smoothSet(searchGain.gain, 0.0001, 0.02);
       return;
     }
     searchAudible = aud;
     for (var i = 0; i < searchHp.length; i++) {
-      searchHp[i].frequency.setTargetAtTime(aud.lo, t, 0.04);
-      searchLp[i].frequency.setTargetAtTime(aud.hi, t, 0.04);
+      smoothSet(searchHp[i].frequency, aud.lo, 0.04);
+      smoothSet(searchLp[i].frequency, aud.hi, 0.04);
     }
-    if (searchGain) searchGain.gain.setTargetAtTime(searchLevel(aud), t, 0.04);
+    if (searchGain) smoothSet(searchGain.gain, searchLevel(aud), 0.04);
     refreshSearchStatus();
   }
 
   function applyEdges(lo, hi, tau) {
     if (!audioCtx || !lpFilters.length) return;
-    var t = audioCtx.currentTime;
     var tc = (tau > 0) ? tau : SLIDER_TAU;
-    var maxF = audioCtx.sampleRate / 2 - 1;
-    var loC = clamp(lo, 10, maxF - 2);
-    var hiC = clamp(hi, loC + 1, maxF);
+    var loC = safeFilterHz(lo);
+    var hiC = safeFilterHz(Math.max(hi, loC + 1));
     for (var i = 0; i < lpFilters.length; i++) {
-      lpFilters[i].frequency.setTargetAtTime(loC, t, tc);
-      hpFilters[i].frequency.setTargetAtTime(hiC, t, tc);
+      smoothSet(lpFilters[i].frequency, loC, tc);
+      smoothSet(hpFilters[i].frequency, hiC, tc);
     }
   }
 
@@ -1261,6 +1398,7 @@
     if (noiseSource) {
       try { noiseSource.stop(); } catch (e) {}
       disconnectNode(noiseSource);
+      liveSources.delete(noiseSource);
       noiseSource = null;
     }
     lpFilters.forEach(disconnectNode);
@@ -1301,7 +1439,7 @@
       }
       var first = plan.slices[0];
       var buf = noiseColor === 'pink' ? makePinkBuffer(2) : makeWhiteBuffer(2);
-      noiseSource = audioCtx.createBufferSource();
+      noiseSource = trackSource(audioCtx.createBufferSource());
       noiseSource.buffer = buf;
       noiseSource.loop = true;
 
@@ -1626,7 +1764,7 @@
   searchSlider.addEventListener('input', function () {
     searchCenter = sliderToFreq(searchSlider.value);
     updateLabels();
-    syncSearchAudio();
+    scheduleSearchSync();
     if (!searchOn) refreshSearchStatus();
     saveSettings();
   });
@@ -1634,7 +1772,7 @@
   searchVolEl.addEventListener('input', function () {
     if (searchGain && audioCtx && searchOn) {
       var level = searchLevel(searchAudible);
-      searchGain.gain.setTargetAtTime(level, audioCtx.currentTime, 0.03);
+      smoothSet(searchGain.gain, level, 0.03);
     }
     updateLabels();
     saveSettings();
@@ -1678,7 +1816,11 @@
   });
 
   $('btnSearchPlay').addEventListener('click', startSearch);
-  $('btnSearchStop').addEventListener('click', function () { stopSearch(false); });
+  // Stop always ends everything this button owns, then sweeps any stray source.
+  function sweepIfIdle() {
+    setTimeout(function () { if (!searchOn && !noiseSource) killAllSources(); }, 120);
+  }
+  $('btnSearchStop').addEventListener('click', function () { stopSearch(false); sweepIfIdle(); });
 
   $('btnLockFreq').addEventListener('click', function () {
     notchCenter = searchCenter;
@@ -1705,16 +1847,24 @@
     if (stepperActive) clearStepTimer();
     try { notchSlider.setPointerCapture(ev.pointerId); } catch (e) {}
   });
+  let notchRaf = null;
   notchSlider.addEventListener('input', function () {
     notchCenter = sliderToFreq(notchSlider.value);
     if (notchDragging && noiseSource && audioCtx) {
       refreshPlan();
       updateLabels();
       var e = bandEdges(notchCenter, THERAPY_W);
-      var maxHi = playableHiMax(audioCtx.sampleRate);
-      var lo = clamp(e.lo, 20, maxHi - 1);
-      var hi = clamp(e.hi, lo + 1, maxHi);
-      applyEdges(lo, hi, SLIDER_TAU);
+      if (!notchRaf) {
+        notchRaf = requestAnimationFrame(function () {
+          notchRaf = null;
+          if (!audioCtx || !noiseSource) return;
+          var e2 = bandEdges(notchCenter, THERAPY_W);
+          var maxHi = playableHiMax(audioCtx.sampleRate);
+          var lo = clamp(e2.lo, 20, maxHi - 1);
+          var hi = clamp(e2.hi, lo + 1, maxHi);
+          applyEdges(lo, hi, SLIDER_TAU);
+        });
+      }
       setNoiseStatus('Adjusting notch · ' + Math.round(e.lo) + '\u2013' + Math.round(e.hi) + ' Hz (stepper paused)', true);
       saveSettings();
       return;
@@ -1749,14 +1899,14 @@
   noiseVolEl.addEventListener('input', function () {
     if (noiseGain && audioCtx && !softFadeActive) {
       var vol = (+noiseVolEl.value) / 100 * 0.35;
-      noiseGain.gain.setTargetAtTime(Math.max(0.0001, vol), audioCtx.currentTime, 0.05);
+      smoothSet(noiseGain.gain, Math.max(0.0001, vol), 0.05);
     }
     updateLabels();
     saveSettings();
   });
 
   $('btnNoisePlay').addEventListener('click', startNoise);
-  $('btnNoiseStop').addEventListener('click', function () { stopNoise(false); });
+  $('btnNoiseStop').addEventListener('click', function () { stopNoise(false); sweepIfIdle(); });
 
   $('noiseWhite').addEventListener('click', function () {
     noiseColor = 'white';
