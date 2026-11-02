@@ -494,11 +494,11 @@
 
     <section class="card" id="step1" aria-labelledby="step1-title">
       <h2 id="step1-title">Step 1 — Find the pitch</h2>
-      <p class="hint">Finding the pitch and moving the listening notch are two different jobs. This step only searches. It starts as a half-octave band of noise centered near 15 kHz, where you think the tinnitus sits. Step down and step up move that whole band so the next one starts exactly where the last one ended — no overlap. Narrow tightens the width in steps: half an octave, then a quarter, an eighth, then one semitone. Widen goes back up, and it will not go wider than half an octave. At one semitone you hear a single tone instead of noise. The center slider runs from 1 kHz through 20 kHz. Match at a quiet volume. This is not a medical device.</p>
+      <p class="hint">Finding the pitch and moving the listening notch are two different jobs. This step only searches. It starts as a soft three-note chord centered near 15 kHz, where you think the tinnitus sits. Width picks the sound: 1/2 is a soft three-note chord around your pitch, 1/4 is a soft two-note chord around your pitch, and 1 note is a single pure tone. Narrow moves toward 1 note, Widen goes back toward 1/2. Step down and step up move the whole sound so the next one starts where the last one ended. The center slider runs from 1 kHz through 20 kHz. Match at a quiet volume. This is not a medical device.</p>
 
       <div class="freq-display" id="searchDisplay" aria-live="polite">
         15,000 Hz
-        <small>12,613–17,838 Hz · 1/2 octave · 5,225 Hz wide · noise band</small>
+        <small>1/2 · three-note chord (4:5:6) · 12164 + 15205 + 18247 Hz</small>
       </div>
 
       <label class="field">
@@ -526,8 +526,7 @@
       <div class="row">
         <span style="font-size:.82rem;color:var(--muted)">Width</span>
         <div class="seg" id="widthSeg" role="group" aria-label="Search width">
-          <button type="button" data-w="3">1 note</button>
-          <button type="button" data-w="2">1/8</button>
+          <button type="button" data-w="2">1 note</button>
           <button type="button" data-w="1">1/4</button>
           <button type="button" class="active" data-w="0">1/2</button>
         </div>
@@ -624,7 +623,12 @@
   var DEFAULT_CENTER = 15000;
   var THERAPY_W = 0.5;
   var NYQUIST_MARGIN = 200;
-  var WIDTH_LADDER = [1 / 2, 1 / 4, 1 / 8, 1 / 12];
+  var WIDTH_LADDER = [1 / 2, 1 / 4, 1 / 12];
+  // Step 1 sounds per width (index-aligned with WIDTH_LADDER): pure sines in
+  // just intonation, geometrically centered on the matched pitch.
+  // 1/2 = major triad 4:5:6, 1/4 = minor third 5:6, 1 note = single tone.
+  var CHORD_RATIOS = [[4, 5, 6], [5, 6], [1]];
+  var CHORD_NAME = ['three-note chord', 'two-note chord', 'tone'];
 
   function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
 
@@ -702,7 +706,7 @@
   }
   // PURE_END
 
-  const WIDTH_NAME = ['1/2 octave', '1/4 octave', '1/8 octave', '1 semitone (1/12 octave)'];
+  const WIDTH_NAME = ['1/2 · three-note chord (4:5:6)', '1/4 · two-note chord (5:6)', '1 note'];
 
   const $ = (id) => document.getElementById(id);
   const acceptEl = $('acceptDisclaimer');
@@ -720,7 +724,8 @@
   let plan = therapyPlan(DEFAULT_CENTER, 48000, THERAPY_W);
   plan.preview = true;
 
-  let searchOsc = null;
+  let searchOscs = [];
+  let searchToneGains = [];
   let searchSource = null;
   let searchGain = null;
   let searchHp = [];
@@ -782,6 +787,24 @@
     return searchWidthIndex === WIDTH_LADDER.length - 1;
   }
 
+  // Frequencies for the current width: center * r / geomean(ratios). If the
+  // top tone would pass the device limit, the whole chord shifts down so the
+  // ratios stay exact. sr = 0 means "no device yet" (display only).
+  function chordFreqs(center, widthIndex, sr) {
+    var r = CHORD_RATIOS[widthIndex] || [1];
+    var logSum = 0;
+    for (var i = 0; i < r.length; i++) logSum += Math.log(r[i]);
+    var geo = Math.exp(logSum / r.length);
+    var top = Math.max.apply(null, r) / geo;
+    var maxTone = sr ? sr / 2 - NYQUIST_MARGIN : Infinity;
+    var c = Math.min(center, maxTone / top);
+    var trimmed = c < center - 0.5;
+    return { freqs: r.map(function (x) { return c * x / geo; }), trimmed: trimmed };
+  }
+  function chordText(f) {
+    return f.map(function (x) { return Math.round(x); }).join(' + ') + ' Hz';
+  }
+
   function placeName(k) {
     if (k === 0) return 'center';
     if (k === -1) return 'one below';
@@ -807,11 +830,8 @@
   }
 
   function searchEdgeText() {
-    var e = bandEdges(searchCenter, currentWidth());
-    var kind = isSemitone() ? 'pure tone' : 'noise band';
-    return Math.round(e.lo) + '\u2013' + Math.round(e.hi) + ' Hz · ' +
-      WIDTH_NAME[searchWidthIndex] + ' · ' +
-      Math.round(e.widthHz) + ' Hz wide · ' + kind;
+    var ch = chordFreqs(searchCenter, searchWidthIndex, knownRate);
+    return WIDTH_NAME[searchWidthIndex] + ' · ' + chordText(ch.freqs);
   }
 
   function sliceBrief(s) {
@@ -890,14 +910,9 @@
 
   function refreshSearchStatus() {
     if (searchOn) {
-      var e = bandEdges(searchCenter, currentWidth());
-      var msg = isSemitone()
-        ? 'Playing tone at ' + formatHz(searchCenter) + ' · ' + WIDTH_NAME[searchWidthIndex]
-        : 'Playing noise band ' + Math.round(e.lo) + '\u2013' + Math.round(e.hi) + ' Hz · ' +
-          WIDTH_NAME[searchWidthIndex] + ' · ' + Math.round(e.widthHz) + ' Hz wide';
-      if (!isSemitone() && searchAudible && searchAudible.trimmed) {
-        msg += ' · top limited by speaker range';
-      }
+      var ch = chordFreqs(searchCenter, searchWidthIndex, audioCtx ? audioCtx.sampleRate : knownRate);
+      var msg = 'Playing ' + CHORD_NAME[searchWidthIndex] + ' · ' + chordText(ch.freqs) + ' · ' + WIDTH_NAME[searchWidthIndex].split(' · ')[0];
+      if (ch.trimmed) msg += ' · moved down to fit speaker range';
       setSearchStatus(msg, true);
       return;
     }
@@ -1197,12 +1212,10 @@
     };
   }
 
-  function searchLevel(aud) {
+  function searchLevel() {
+    // Step 1 is always pure sines (one tone or a chord) under the tone cap.
     var vol = (+searchVolEl.value) / 100;
-    if (isSemitone()) return clamp(vol * 0.22, 0.0001, 0.1);
-    var bw = Math.max(1, aud.hi - aud.lo);
-    var makeup = clamp(Math.sqrt((audioCtx.sampleRate / 2) / bw), 1, 5);
-    return clamp(vol * 0.16 * makeup, 0.0001, 0.33);
+    return clamp(vol * 0.22, 0.0001, 0.1);
   }
 
   function makeWhiteBuffer(seconds) {
@@ -1240,14 +1253,15 @@
   }
 
   function silenceSearchNow() {
-    try { if (searchOsc) searchOsc.stop(); } catch (e) {}
+    searchOscs.forEach(function (o) { try { o.stop(); } catch (e) {} disconnectNode(o); liveSources.delete(o); });
+    searchToneGains.forEach(disconnectNode);
     try { if (searchSource) searchSource.stop(); } catch (e) {}
-    disconnectNode(searchOsc);
     disconnectNode(searchSource);
     disconnectNode(searchGain);
     searchHp.forEach(disconnectNode);
     searchLp.forEach(disconnectNode);
-    searchOsc = null;
+    searchOscs = [];
+    searchToneGains = [];
     searchSource = null;
     searchGain = null;
     searchHp = [];
@@ -1263,59 +1277,45 @@
     ++searchGen;
     try {
       unlockAudio();
-      if (searchGain || searchOsc || searchSource) stopSearch(true);
+      if (searchGain || searchOscs.length || searchSource) stopSearch(true);
       ++searchGen;
       var wasNoise = !!noiseSource;
       stopNoise(true);
       if (wasNoise) setNoiseStatus('Session stopped', false);
       refreshPlan();
-      var edges = bandEdges(searchCenter, currentWidth());
       searchGain = audioCtx.createGain();
-      var level = 0.0001;
-      if (isSemitone()) {
-        var maxTone = audioCtx.sampleRate / 2 - NYQUIST_MARGIN;
-        if (searchCenter > maxTone) {
-          searchGain = null;
-          searchOn = false;
-          setSearchStatus('This tone is above what this device can play.', false);
-          enableAudioButtons(true);
-          updateLabels();
-          return;
-        }
-        searchOsc = trackSource(audioCtx.createOscillator());
-        searchOsc.type = 'sine';
-        searchOsc.frequency.value = clamp(searchCenter, FREQ_MIN, maxTone);
-        searchOsc.connect(searchGain);
-        level = searchLevel(null);
-        searchOsc.start();
-        searchAudible = null;
-      } else {
-        var aud = audibleSearchEdges(edges);
-        if (!aud) {
-          searchGain = null;
-          searchOn = false;
-          setSearchStatus('This band is above what this device can play.', false);
-          enableAudioButtons(true);
-          updateLabels();
-          return;
-        }
-        searchAudible = aud;
-        var buf = makeWhiteBuffer(2);
-        searchSource = trackSource(audioCtx.createBufferSource());
-        searchSource.buffer = buf;
-        searchSource.loop = true;
-        for (var i = 0; i < 4; i++) {
-          searchHp.push(makeBiquad('highpass', aud.lo));
-          searchLp.push(makeBiquad('lowpass', aud.hi));
-        }
-        searchSource.connect(searchHp[0]);
-        for (var h = 0; h < 3; h++) searchHp[h].connect(searchHp[h + 1]);
-        searchHp[3].connect(searchLp[0]);
-        for (var l = 0; l < 3; l++) searchLp[l].connect(searchLp[l + 1]);
-        searchLp[3].connect(searchGain);
-        level = searchLevel(aud);
-        searchSource.start();
+      // Start silent at the node itself, not only via a scheduled event: a
+      // smoothSet() in the same frame cancels scheduled events and would
+      // otherwise fall back to the default gain of 1 (a loud burst).
+      searchGain.gain.value = 0.0001;
+      var maxTone = audioCtx.sampleRate / 2 - NYQUIST_MARGIN;
+      if (isSemitone() && searchCenter > maxTone) {
+        searchGain = null;
+        searchOn = false;
+        setSearchStatus('This tone is above what this device can play.', false);
+        enableAudioButtons(true);
+        updateLabels();
+        return;
       }
+      // One sine per chord note, equal gains summing to 1, so the chord's
+      // peak never exceeds the single-tone level set on searchGain.
+      var ch = chordFreqs(searchCenter, searchWidthIndex, audioCtx.sampleRate);
+      var each = 1 / ch.freqs.length;
+      for (var i = 0; i < ch.freqs.length; i++) {
+        var o = trackSource(audioCtx.createOscillator());
+        o.type = 'sine';
+        o.frequency.value = clamp(ch.freqs[i], 30, maxTone);
+        var tg = audioCtx.createGain();
+        tg.gain.value = each;
+        o.connect(tg);
+        tg.connect(searchGain);
+        searchOscs.push(o);
+        searchToneGains.push(tg);
+      }
+      var level = searchLevel(null);
+      var t0 = audioCtx.currentTime;
+      searchOscs.forEach(function (o) { o.start(t0); });
+      searchAudible = null;
       searchGain.connect(masterGain);
       var t = audioCtx.currentTime;
       searchGain.gain.setValueAtTime(0.0001, t);
@@ -1339,10 +1339,10 @@
   function stopSearch(silent) {
     searchGen++;
     searchOn = false;
-    var osc = searchOsc;
+    var oscs = searchOscs;
     var src = searchSource;
     var g = searchGain;
-    var nodes = [osc, src, g].concat(searchHp, searchLp);
+    var nodes = [src, g].concat(oscs, searchToneGains, searchHp, searchLp);
     if (g && audioCtx) {
       try {
         var t = audioCtx.currentTime;
@@ -1352,17 +1352,17 @@
         g.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
       } catch (e) {}
     }
-    searchOsc = null;
+    searchOscs = [];
+    searchToneGains = [];
     searchSource = null;
     searchGain = null;
     searchHp = [];
     searchLp = [];
     searchAudible = null;
     setTimeout(function () {
-      try { if (osc) osc.stop(); } catch (e) {}
+      oscs.forEach(function (o) { try { o.stop(); } catch (e) {} liveSources.delete(o); });
       try { if (src) src.stop(); } catch (e) {}
       nodes.forEach(disconnectNode);
-      if (osc) liveSources.delete(osc);
       if (src) liveSources.delete(src);
     }, 60);
     syncPlayButtons();
@@ -1388,28 +1388,15 @@
       startSearch();
       return;
     }
-    if (isSemitone() && searchOsc) {
+    if (searchOscs.length) {
       var maxTone = audioCtx.sampleRate / 2 - NYQUIST_MARGIN;
-      smoothSet(searchOsc.frequency, clamp(searchCenter, FREQ_MIN, maxTone), 0.03);
+      var ch = chordFreqs(searchCenter, searchWidthIndex, audioCtx.sampleRate);
+      for (var i = 0; i < searchOscs.length && i < ch.freqs.length; i++) {
+        smoothSet(searchOscs[i].frequency, clamp(ch.freqs[i], 30, maxTone), 0.03);
+      }
       if (searchGain) smoothSet(searchGain.gain, searchLevel(null), 0.03);
-      searchAudible = null;
       refreshSearchStatus();
-      return;
     }
-    var edges = bandEdges(searchCenter, currentWidth());
-    var aud = audibleSearchEdges(edges);
-    if (!aud) {
-      setSearchStatus('This band is above what this device can play.', false);
-      if (searchGain) smoothSet(searchGain.gain, 0.0001, 0.02);
-      return;
-    }
-    searchAudible = aud;
-    for (var i = 0; i < searchHp.length; i++) {
-      smoothSet(searchHp[i].frequency, aud.lo, 0.04);
-      smoothSet(searchLp[i].frequency, aud.hi, 0.04);
-    }
-    if (searchGain) smoothSet(searchGain.gain, searchLevel(aud), 0.04);
-    refreshSearchStatus();
   }
 
   function applyEdges(lo, hi, tau) {
@@ -1531,6 +1518,7 @@
       shelfFilter.gain.value = noiseColor === 'white' ? -2 : 0;
 
       noiseGain = audioCtx.createGain();
+      noiseGain.gain.value = 0.0001; // same reason as searchGain
       var vol = (+noiseVolEl.value) / 100 * 0.35;
       noiseGain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
       noiseGain.gain.exponentialRampToValueAtTime(Math.max(0.0001, vol), audioCtx.currentTime + 0.4);
@@ -1759,7 +1747,7 @@
     try {
       var data = {
         searchCenter: searchCenter,
-        searchWidthIndex: searchWidthIndex,
+        searchWidthOct: currentWidth(),
         notchCenter: notchCenter,
         searchVol: +searchVolEl.value,
         noiseVol: +noiseVolEl.value,
@@ -1779,8 +1767,13 @@
       if (d.searchCenter != null && isFinite(+d.searchCenter)) {
         searchCenter = clamp(+d.searchCenter, FREQ_MIN, FREQ_MAX);
       }
-      if (d.searchWidthIndex != null && isFinite(+d.searchWidthIndex)) {
-        searchWidthIndex = clamp(Math.round(+d.searchWidthIndex), 0, WIDTH_LADDER.length - 1);
+      if (d.searchWidthOct != null && isFinite(+d.searchWidthOct)) {
+        var wo = +d.searchWidthOct;
+        searchWidthIndex = wo >= 0.375 ? 0 : (wo > 0.1 ? 1 : 2);   // 1/8 -> 1/4
+      } else if (d.searchWidthIndex != null && isFinite(+d.searchWidthIndex)) {
+        // Older saves used the 4-step ladder 1/2, 1/4, 1/8, 1 note.
+        var legacy = [0, 1, 1, 2];
+        searchWidthIndex = legacy[clamp(Math.round(+d.searchWidthIndex), 0, 3)];
       }
       if (d.notchCenter != null && isFinite(+d.notchCenter)) {
         notchCenter = clamp(+d.notchCenter, FREQ_MIN, FREQ_MAX);
@@ -1825,7 +1818,7 @@
     b.querySelector('.lbl').textContent = label;
   }
   function syncPlayButtons() {
-    renderToggle('btnSearchPlay', !!searchOn, isSemitone() ? 'Play tone' : 'Play band');
+    renderToggle('btnSearchPlay', !!searchOn, isSemitone() ? 'Play tone' : 'Play chord');
     renderToggle('btnNoisePlay', !!noiseSource, 'Play notched noise');
   }
   window.__notchButtons = function () {
@@ -1931,6 +1924,7 @@
       if (noiseSource) { stopNoise(true); setNoiseStatus('Session stopped', false); }
       var o = trackSource(audioCtx.createOscillator());
       var g = audioCtx.createGain();
+      g.gain.value = 0.0001;
       o.type = 'sine';
       o.frequency.value = 660;
       var t = audioCtx.currentTime;
