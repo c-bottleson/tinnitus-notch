@@ -546,9 +546,9 @@
 
     <section class="card" id="step2" aria-labelledby="step2-title">
       <h2 id="step2-title">Step 2 — Notched noise sound session</h2>
-      <p class="hint">When you lock a pitch, the notch is centered on that frequency. You do not set a separate low and high band. Each slice is a hard notch half an octave wide. Playback starts two slices below the locked pitch and walks upward, edge to edge with no overlap: two below, the center, and two above. About 30 seconds on each slice, then it loops. A slice is left out only when its top edge is too high for this device to play (or the slice sits entirely below 1 kHz). The status says so.</p>
+      <p class="hint">When you lock a pitch, the noise plays with one fixed notch centered on it. The notch is one octave wide (half an octave below the pitch to half an octave above) and deep enough that the band around your pitch is close to silent. It stays put for the whole session. Everything outside the notch plays at its normal level. The curve below is the real filter the page is playing.</p>
 
-      <canvas class="notch-viz" id="notchViz" width="680" height="92" aria-label="Notch slices across 1 kHz to 20 kHz"></canvas>
+      <canvas class="notch-viz" id="notchViz" width="680" height="92" aria-label="Notch filter response across 1 kHz to 20 kHz"></canvas>
 
       <label class="field">
         <span class="label"><span>Locked notch center</span><span class="val" id="notchFreqLabel">15,000 Hz</span></span>
@@ -612,16 +612,13 @@
 
   const STORAGE_KEY = 'notch-therapy-v2';
   const BIQUAD_Q = 0.7071;
-  const DWELL_MS = 30000;
-  const STEP_TAU = 0.13;
-  const SLIDER_TAU = 0.04;
   const SLIDER_MAX = 100000;
 
   // PURE_START
   var FREQ_MIN = 1000;
   var FREQ_MAX = 20000;
   var DEFAULT_CENTER = 15000;
-  var THERAPY_W = 0.5;
+  var THERAPY_W = 1;   // notch width in octaves: f/sqrt2 .. f*sqrt2
   var NYQUIST_MARGIN = 200;
   var WIDTH_LADDER = [1 / 2, 1 / 4, 1 / 12];
   // Step 1 sounds per width (index-aligned with WIDTH_LADDER): pure sines in
@@ -668,41 +665,61 @@
     return sampleRate / 2 - NYQUIST_MARGIN;
   }
 
-  // Five slice centers: f * 2^(-2w), 2^(-w), 1, 2^(w), 2^(2w).
-  // With w = 0.5 the hop is sqrt(2), not an octave. Edges abut:
-  // next lo = previous hi. A slice is dropped only when its top edge
-  // is above Nyquist minus a small margin, or the whole slice is below 1 kHz.
-  function therapyPlan(center, sampleRate, widthOct) {
+  // One fixed notch, THERAPY_W octaves wide, centered on the locked pitch.
+  // If the top edge is above what the device can play, the notch simply
+  // runs to the top of the device's range (it still covers the pitch).
+  function notchPlan(center, sampleRate, widthOct) {
     var w = (widthOct == null) ? THERAPY_W : widthOct;
     var maxHi = playableHiMax(sampleRate);
-    var slices = [];
-    var skipped = [];
-    var limitedUp = false;
-    var limitedDown = false;
-    for (var k = -2; k <= 2; k++) {
-      var c = center * Math.pow(2, k * w);
-      var edges = bandEdges(c, w);
-      var rec = { k: k, center: c, lo: edges.lo, hi: edges.hi };
-      if (!(edges.hi > edges.lo) || edges.hi > maxHi) {
-        limitedUp = true;
-        rec.reason = 'speaker';
-        skipped.push(rec);
-      } else if (edges.hi < FREQ_MIN) {
-        limitedDown = true;
-        rec.reason = 'below-1k';
-        skipped.push(rec);
-      } else {
-        slices.push(rec);
-      }
-    }
+    var e = bandEdges(center, w);
     return {
-      slices: slices,
-      skipped: skipped,
-      limitedUp: limitedUp,
-      limitedDown: limitedDown,
+      center: center,
+      lo: e.lo,
+      hi: Math.min(e.hi, sampleRate / 2),
+      limitedUp: e.hi > maxHi,
+      centerUnplayable: center > maxHi,
       maxHi: maxHi,
       sampleRate: sampleRate
     };
+  }
+
+  // Linear-phase band-stop FIR (windowed sinc, Kaiser window). Passband gain
+  // is 1 (0 dB) on both sides; the stopband is deeper than 60 dB.
+  var NOTCH_TAPS = 2047;
+  var NOTCH_BETA = 8;
+  function besselI0(x) {
+    var sum = 1, term = 1, y = x * x / 4;
+    for (var k = 1; k < 60; k++) {
+      term *= y / (k * k);
+      sum += term;
+      if (term < 1e-12 * sum) break;
+    }
+    return sum;
+  }
+  function designBandstop(sampleRate, lo, hi, taps) {
+    var N = taps || NOTCH_TAPS;
+    var M = (N - 1) / 2;
+    var h = new Float32Array(N);
+    var nyq = sampleRate / 2;
+    var fl = clamp(lo, 1, nyq) / sampleRate;
+    var fh = clamp(hi, lo, nyq) / sampleRate;
+    var i0b = besselI0(NOTCH_BETA);
+    for (var n = 0; n < N; n++) {
+      var m = n - M;
+      var r = m / M;
+      var win = besselI0(NOTCH_BETA * Math.sqrt(Math.max(0, 1 - r * r))) / i0b;
+      var bp = m === 0 ? 2 * (fh - fl)
+        : (Math.sin(2 * Math.PI * fh * m) - Math.sin(2 * Math.PI * fl * m)) / (Math.PI * m);
+      h[n] = ((m === 0 ? 1 : 0) - bp) * win;
+    }
+    return h;
+  }
+  // Magnitude in dB of a symmetric FIR at frequency f (linear phase, so the
+  // response is a real cosine sum around the middle tap).
+  function firMagDb(h, sampleRate, f) {
+    var M = (h.length - 1) / 2, acc = 0, wv = 2 * Math.PI * f / sampleRate;
+    for (var n = 0; n < h.length; n++) acc += h[n] * Math.cos(wv * (n - M));
+    return 20 * Math.log10(Math.max(1e-9, Math.abs(acc)));
   }
   // PURE_END
 
@@ -721,7 +738,7 @@
   let searchCenter = DEFAULT_CENTER;
   let searchWidthIndex = 0;
   let notchCenter = DEFAULT_CENTER;
-  let plan = therapyPlan(DEFAULT_CENTER, 48000, THERAPY_W);
+  let plan = notchPlan(DEFAULT_CENTER, 48000, THERAPY_W);
   plan.preview = true;
 
   let searchOscs = [];
@@ -736,21 +753,14 @@
 
   let noiseSource = null;
   let noiseGain = null;
-  let lpFilters = [];
-  let hpFilters = [];
-  let sumGain = null;
+  let notchConv = null;      // ConvolverNode currently in the path
+  let notchConvGain = null;  // its crossfade gain
+  let notchKey = '';         // sampleRate|lo|hi the live convolver was built for
   let shelfFilter = null;
   let noiseColor = 'white';
   let noiseGen = 0;
   let fadeToken = 0;
-  let stepperActive = false;
-  let stepSlices = [];
-  let stepIndex = 0;
-  let stepTimer = null;
-  let stepDeadline = 0;
-  let stepRemainMs = DWELL_MS;
   let notchDragging = false;
-  let dragOrigin = DEFAULT_CENTER;
   let sessionMinutes = 0;
   let sessionEndsAt = 0;
   let timerRaf = null;
@@ -825,7 +835,7 @@
     // doesn't change length when audio starts again after a stop/hide.
     if (audioCtx && audioCtx.sampleRate) knownRate = audioCtx.sampleRate;
     var sr = knownRate || 48000;
-    plan = therapyPlan(notchCenter, sr, THERAPY_W);
+    plan = notchPlan(notchCenter, sr, THERAPY_W);
     plan.preview = !knownRate;
   }
 
@@ -834,31 +844,15 @@
     return WIDTH_NAME[searchWidthIndex] + ' · ' + chordText(ch.freqs);
   }
 
-  function sliceBrief(s) {
-    return formatHz(s.center) + ' (' + Math.round(s.lo) + '\u2013' + Math.round(s.hi) + ', ' + placeName(s.k) + ')';
-  }
-
   function planHtml() {
-    if (!plan.slices.length) {
-      return '<strong>No slice fits.</strong> Every half-octave slice around ' + formatHz(notchCenter) +
-        ' is outside what this speaker can play.';
-    }
     var head = plan.preview
       ? 'Preview assuming a 48 kHz device. The real speaker limit is applied when audio starts. '
       : 'This device is ' + plan.sampleRate + ' Hz. ';
-    var body = plan.slices.length + ' slice' + (plan.slices.length === 1 ? '' : 's') +
-      ', lowest first: ' + plan.slices.map(sliceBrief).join(' · ') + '.';
+    var body = 'Notch ' + Math.round(plan.lo) + '\u2013' + Math.round(plan.hi) + ' Hz, one octave centered on ' +
+      formatHz(plan.center) + '. It stays fixed for the whole session.';
     var notes = '';
-    if (plan.limitedUp) notes += ' <span class="warn">Up limited by speaker range.</span>';
-    if (plan.limitedDown) notes += ' <span class="warn">Down limited by the 1 kHz floor.</span>';
-    if (!plan.slices.some(function (s) { return s.k === 0; })) {
-      notes += ' <span class="warn">The slice on the locked pitch itself does not fit this speaker.</span>';
-    }
-    if (plan.skipped.length) {
-      notes += ' Skipped: ' + plan.skipped.map(function (s) {
-        return formatHz(s.center);
-      }).join(', ') + '.';
-    }
+    if (plan.centerUnplayable) notes += ' <span class="warn">The locked pitch is above what this speaker can play.</span>';
+    else if (plan.limitedUp) notes += ' <span class="warn">The top of the notch runs past the speaker range, so the notch goes to the top of what it can play.</span>';
     return head + body + notes;
   }
 
@@ -920,17 +914,8 @@
     else setSearchStatus('Ready · ' + searchEdgeText(), false);
   }
 
-  function sliceStatus(i) {
-    var s = stepSlices[i];
-    var msg = 'Slice ' + (i + 1) + ' of ' + stepSlices.length + ' · ' + placeName(s.k) +
-      ' · ' + Math.round(s.lo) + '\u2013' + Math.round(s.hi) + ' Hz';
-    if (stepDeadline) {
-      var left = Math.max(0, Math.ceil((stepDeadline - Date.now()) / 1000));
-      msg += ' · ' + left + 's';
-    }
-    if (plan.limitedUp) msg += ' · up limited by speaker range';
-    if (plan.limitedDown) msg += ' · down limited by 1 kHz range';
-    return msg;
+  function notchStatus() {
+    return 'Playing · notch ' + Math.round(plan.lo) + '\u2013' + Math.round(plan.hi) + ' Hz around ' + formatHz(plan.center);
   }
 
   // iPhone audio, with ear safety first.
@@ -1399,56 +1384,54 @@
     }
   }
 
-  function applyEdges(lo, hi, tau) {
-    if (!audioCtx || !lpFilters.length) return;
-    var tc = (tau > 0) ? tau : SLIDER_TAU;
-    var loC = safeFilterHz(lo);
-    var hiC = safeFilterHz(Math.max(hi, loC + 1));
-    for (var i = 0; i < lpFilters.length; i++) {
-      smoothSet(lpFilters[i].frequency, loC, tc);
-      smoothSet(hpFilters[i].frequency, hiC, tc);
+  // Band-stop FIR taps, cached per sample rate and band.
+  var firCache = { key: '', h: null };
+  function notchTaps(sr, lo, hi) {
+    var key = sr + '|' + lo.toFixed(2) + '|' + hi.toFixed(2);
+    if (firCache.key !== key) firCache = { key: key, h: designBandstop(sr, lo, hi) };
+    return firCache;
+  }
+
+  // Put a convolver for the current plan in the noise path. If one is
+  // already playing, the new one fades in while the old one fades out, so
+  // moving the notch never clicks. Sample rate comes from the live context.
+  function setNotchConvolver(fadeSec) {
+    if (!audioCtx || !noiseSource || !shelfFilter) return;
+    var sr = audioCtx.sampleRate;
+    var t = notchTaps(sr, plan.lo, plan.hi);
+    if (notchConv && notchKey === t.key) return;
+    var ir = audioCtx.createBuffer(1, t.h.length, sr);
+    ir.getChannelData(0).set(t.h);
+    var conv = audioCtx.createConvolver();
+    conv.normalize = false;   // keep 0 dB passband exactly
+    conv.buffer = ir;
+    var g = audioCtx.createGain();
+    var now = audioCtx.currentTime;
+    var old = notchConv, oldG = notchConvGain;
+    noiseSource.connect(conv);
+    conv.connect(g);
+    g.connect(shelfFilter);
+    if (old && fadeSec > 0) {
+      g.gain.setValueAtTime(0, now);
+      g.gain.linearRampToValueAtTime(1, now + fadeSec);
+      try {
+        oldG.gain.cancelScheduledValues(now);
+        oldG.gain.setValueAtTime(oldG.gain.value, now);
+        oldG.gain.linearRampToValueAtTime(0, now + fadeSec);
+      } catch (e) {}
+      setTimeout(function () { disconnectNode(old); disconnectNode(oldG); }, fadeSec * 1000 + 80);
+    } else {
+      g.gain.value = 1;
+      disconnectNode(old);
+      disconnectNode(oldG);
     }
-  }
-
-  function clearStepTimer() {
-    if (stepTimer) {
-      clearTimeout(stepTimer);
-      stepTimer = null;
-    }
-    stepDeadline = 0;
-  }
-
-  function scheduleDwell(ms) {
-    clearStepTimer();
-    var wait = Math.max(20, ms);
-    stepRemainMs = wait;
-    stepDeadline = Date.now() + wait;
-    stepTimer = setTimeout(onDwellDone, wait);
-  }
-
-  function onDwellDone() {
-    stepTimer = null;
-    stepDeadline = 0;
-    if (!stepperActive || notchDragging || !noiseSource || stepSlices.length < 2) return;
-    var next = (stepIndex + 1) % stepSlices.length;
-    goToSlice(next, STEP_TAU);
-    scheduleDwell(DWELL_MS);
-  }
-
-  function goToSlice(i, tau) {
-    stepIndex = i;
-    var s = stepSlices[i];
-    applyEdges(s.lo, s.hi, tau);
-    if (noiseSource) setNoiseStatus(sliceStatus(i), true);
-    updateLabels();
+    notchConv = conv;
+    notchConvGain = g;
+    notchKey = t.key;
   }
 
   function teardownNoise() {
     cancelTimer();
-    clearStepTimer();
-    stepperActive = false;
-    stepSlices = [];
-    stepIndex = 0;
     softFadeActive = false;
     if (noiseSource) {
       try { noiseSource.stop(); } catch (e) {}
@@ -1456,12 +1439,11 @@
       liveSources.delete(noiseSource);
       noiseSource = null;
     }
-    lpFilters.forEach(disconnectNode);
-    hpFilters.forEach(disconnectNode);
-    lpFilters = [];
-    hpFilters = [];
-    disconnectNode(sumGain);
-    sumGain = null;
+    disconnectNode(notchConv);
+    disconnectNode(notchConvGain);
+    notchConv = null;
+    notchConvGain = null;
+    notchKey = '';
     disconnectNode(shelfFilter);
     shelfFilter = null;
     if (noiseGain) {
@@ -1484,33 +1466,10 @@
       stopSearch(true);
       if (wasSearch) refreshSearchStatus();
       refreshPlan();
-      if (!plan.slices.length) {
-        setNoiseStatus('No slice around ' + formatHz(notchCenter) + ' fits this speaker.', false);
-        syncPlayButtons();
-        updateLabels();
-        saveSettings();
-        return;
-      }
-      var first = plan.slices[0];
-      var buf = noiseColor === 'pink' ? makePinkBuffer(2) : makeWhiteBuffer(2);
+      var buf = noiseColor === 'pink' ? makePinkBuffer(4) : makeWhiteBuffer(4);
       noiseSource = trackSource(audioCtx.createBufferSource());
       noiseSource.buffer = buf;
       noiseSource.loop = true;
-
-      lpFilters = [];
-      hpFilters = [];
-      for (var i = 0; i < 4; i++) {
-        lpFilters.push(makeBiquad('lowpass', first.lo));
-        hpFilters.push(makeBiquad('highpass', first.hi));
-      }
-      for (var n = 0; n < 3; n++) {
-        lpFilters[n].connect(lpFilters[n + 1]);
-        hpFilters[n].connect(hpFilters[n + 1]);
-      }
-      sumGain = audioCtx.createGain();
-      sumGain.gain.value = 1;
-      lpFilters[3].connect(sumGain);
-      hpFilters[3].connect(sumGain);
 
       shelfFilter = audioCtx.createBiquadFilter();
       shelfFilter.type = 'highshelf';
@@ -1523,22 +1482,15 @@
       noiseGain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
       noiseGain.gain.exponentialRampToValueAtTime(Math.max(0.0001, vol), audioCtx.currentTime + 0.4);
 
-      noiseSource.connect(lpFilters[0]);
-      noiseSource.connect(hpFilters[0]);
-      sumGain.connect(shelfFilter);
       shelfFilter.connect(noiseGain);
+      setNotchConvolver(0);
       noiseGain.connect(masterGain);
       noiseSource.start();
-
-      stepSlices = plan.slices;
-      stepIndex = 0;
-      stepperActive = stepSlices.length >= 2;
-      if (stepperActive) scheduleDwell(DWELL_MS);
 
       syncPlayButtons();
       $('pill2').classList.add('active');
       $('pill1').classList.add('done');
-      setNoiseStatus(sliceStatus(0), true);
+      setNoiseStatus(notchStatus(), true);
 
       if (sessionMinutes > 0) {
         sessionEndsAt = Date.now() + sessionMinutes * 60 * 1000;
@@ -1563,8 +1515,6 @@
       stopNoise(false);
       return;
     }
-    clearStepTimer();
-    stepperActive = false;
     softFadeActive = true;
     setNoiseStatus('Soft ending…', true);
     $('noiseDot').className = 'dot warn';
@@ -1591,25 +1541,10 @@
 
   function commitNotchCenter() {
     refreshPlan();
-    if (!noiseSource) {
-      updateLabels();
-      saveSettings();
-      return;
+    if (noiseSource) {
+      setNotchConvolver(0.08);
+      setNoiseStatus(notchStatus(), true);
     }
-    if (!plan.slices.length) {
-      stopNoise(false);
-      setNoiseStatus('No slice around ' + formatHz(notchCenter) + ' fits this speaker.', false);
-      updateLabels();
-      saveSettings();
-      return;
-    }
-    stepSlices = plan.slices;
-    stepIndex = 0;
-    stepperActive = stepSlices.length >= 2;
-    applyEdges(stepSlices[0].lo, stepSlices[0].hi, STEP_TAU);
-    if (stepperActive) scheduleDwell(DWELL_MS);
-    else clearStepTimer();
-    setNoiseStatus(sliceStatus(0), true);
     updateLabels();
     saveSettings();
   }
@@ -1640,6 +1575,7 @@
     timerRaf = requestAnimationFrame(tickTimer);
   }
 
+  var vizCache = null;
   function drawNotchViz() {
     var dpr = window.devicePixelRatio || 1;
     var w = canvas.clientWidth || 680;
@@ -1660,30 +1596,10 @@
       return (Math.log(c / fMin) / Math.log(fMax / fMin)) * w;
     }
 
-    var slices = (plan && plan.slices) ? plan.slices : [];
-    var skipped = (plan && plan.skipped) ? plan.skipped : [];
-    slices.forEach(function (s) {
-      var x1 = freqToX(s.lo);
-      var x2 = freqToX(s.hi);
-      ctx2d.fillStyle = 'rgba(88, 166, 255, 0.10)';
-      ctx2d.fillRect(x1, 16, Math.max(1, x2 - x1), h - 32);
-    });
-    skipped.forEach(function (s) {
-      if (s.hi < fMin || s.lo > fMax) return;
-      var x1 = freqToX(s.lo);
-      var x2 = freqToX(s.hi);
-      ctx2d.fillStyle = 'rgba(248, 81, 73, 0.08)';
-      ctx2d.fillRect(x1, 16, Math.max(1, x2 - x1), h - 32);
-    });
-
-    var curve = bandEdges(notchCenter, THERAPY_W);
-    var active = null;
-    if (!notchDragging && noiseSource && stepSlices.length) active = stepSlices[stepIndex];
-    else if (!notchDragging) {
-      for (var i = 0; i < slices.length; i++) if (slices[i].k === 0) active = slices[i];
-      if (!active && slices.length) active = slices[slices.length - 1];
-    }
-    if (active) curve = active;
+    var sr = (plan && plan.sampleRate) || 48000;
+    var taps = notchTaps(sr, plan.lo, plan.hi);
+    ctx2d.fillStyle = 'rgba(88, 166, 255, 0.10)';
+    ctx2d.fillRect(freqToX(plan.lo), 16, Math.max(1, freqToX(plan.hi) - freqToX(plan.lo)), h - 32);
 
     ctx2d.strokeStyle = '#21262d';
     ctx2d.lineWidth = 1;
@@ -1695,22 +1611,27 @@
       ctx2d.stroke();
     }
 
-    var trans = 0.04;
-    function magDb(f) {
-      var enter = clamp(Math.log2(f / curve.lo) / trans + 0.5, 0, 1);
-      var leave = clamp(Math.log2(f / curve.hi) / trans + 0.5, 0, 1);
-      return -42 * clamp(enter - leave, 0, 1);
+    // Real response of the FIR the page plays (same taps), 0 dB to -60 dB.
+    // Points above the device's Nyquist are not drawn.
+    if (!vizCache || vizCache.key !== taps.key + '|' + w) {
+      var pts = [];
+      for (var px = 0; px <= w; px += 2) {
+        var fq = fMin * Math.pow(fMax / fMin, px / w);
+        pts.push([px, fq < sr / 2 ? firMagDb(taps.h, sr, fq) : null]);
+      }
+      vizCache = { key: taps.key + '|' + w, pts: pts };
     }
     ctx2d.beginPath();
     ctx2d.strokeStyle = '#58a6ff';
     ctx2d.lineWidth = 2;
-    for (var x = 0; x <= w; x++) {
-      var f = fMin * Math.pow(fMax / fMin, x / w);
-      var db = magDb(f);
-      var y = 14 + (h - 30) * (1 - (db + 48) / 51);
-      if (x === 0) ctx2d.moveTo(x, y);
-      else ctx2d.lineTo(x, y);
-    }
+    var started = false;
+    vizCache.pts.forEach(function (pt) {
+      if (pt[1] == null) return;
+      var db = clamp(pt[1], -60, 3);
+      var yy = 14 + (h - 30) * (1 - (db + 60) / 63);
+      if (!started) { ctx2d.moveTo(pt[0], yy); started = true; }
+      else ctx2d.lineTo(pt[0], yy);
+    });
     ctx2d.stroke();
 
     var cx = freqToX(notchCenter);
@@ -1739,7 +1660,7 @@
       var tx = freqToX(tick);
       ctx2d.fillText((tick / 1000) + 'k', tx + 2, h - 4);
     });
-    var label = Math.round(curve.lo) + '\u2013' + Math.round(curve.hi) + ' Hz';
+    var label = 'notch ' + Math.round(plan.lo) + '\u2013' + Math.round(plan.hi) + ' Hz · 0 to \u221260 dB';
     ctx2d.fillText(label, 6, 12);
   }
 
@@ -1980,56 +1901,37 @@
 
   notchSlider.addEventListener('pointerdown', function (ev) {
     notchDragging = true;
-    dragOrigin = notchCenter;
-    if (stepperActive && stepDeadline) stepRemainMs = Math.max(0, stepDeadline - Date.now());
-    else stepRemainMs = DWELL_MS;
-    if (stepperActive) clearStepTimer();
     try { notchSlider.setPointerCapture(ev.pointerId); } catch (e) {}
   });
+  // While dragging with sound on, the notch follows the slider, rebuilt at
+  // most every 120 ms with a short crossfade. Release commits the final spot.
   let notchRaf = null;
+  let lastNotchBuild = 0;
   notchSlider.addEventListener('input', function () {
     notchCenter = sliderToFreq(notchSlider.value);
+    refreshPlan();
     if (notchDragging && noiseSource && audioCtx) {
-      refreshPlan();
       updateLabels();
-      var e = bandEdges(notchCenter, THERAPY_W);
       if (!notchRaf) {
         notchRaf = requestAnimationFrame(function () {
           notchRaf = null;
           if (!audioCtx || !noiseSource) return;
-          var e2 = bandEdges(notchCenter, THERAPY_W);
-          var maxHi = playableHiMax(audioCtx.sampleRate);
-          var lo = clamp(e2.lo, 20, maxHi - 1);
-          var hi = clamp(e2.hi, lo + 1, maxHi);
-          applyEdges(lo, hi, SLIDER_TAU);
+          var now = performance.now();
+          if (now - lastNotchBuild < 120) return;
+          lastNotchBuild = now;
+          setNotchConvolver(0.06);
         });
       }
-      setNoiseStatus('Adjusting notch · ' + Math.round(e.lo) + '\u2013' + Math.round(e.hi) + ' Hz (stepper paused)', true);
+      setNoiseStatus('Adjusting notch · ' + Math.round(plan.lo) + '\u2013' + Math.round(plan.hi) + ' Hz', true);
       saveSettings();
       return;
     }
-    // Keyboard (no pointer drag) commits immediately so the slices follow the slider.
     if (!notchDragging) commitNotchCenter();
+    else { updateLabels(); saveSettings(); }
   });
   function endNotchDrag() {
     if (!notchDragging) return;
     notchDragging = false;
-    var moved = Math.abs(Math.log(Math.max(notchCenter, 1) / Math.max(dragOrigin, 1))) > 0.0008;
-    if (!moved) {
-      notchCenter = dragOrigin;
-      refreshPlan();
-      pushSliders();
-      if (noiseSource && stepSlices.length) {
-        applyEdges(stepSlices[stepIndex].lo, stepSlices[stepIndex].hi, SLIDER_TAU);
-        setNoiseStatus(sliceStatus(stepIndex), true);
-        if (stepperActive) {
-          if (stepRemainMs <= 20) onDwellDone();
-          else scheduleDwell(stepRemainMs);
-        }
-      }
-      updateLabels();
-      return;
-    }
     commitNotchCenter();
   }
   window.addEventListener('pointerup', endNotchDrag);
@@ -2084,11 +1986,6 @@
       saveSettings();
     });
   });
-
-  setInterval(function () {
-    if (!stepperActive || !noiseSource || !stepDeadline || notchDragging || softFadeActive) return;
-    $('noiseStatus').textContent = sliceStatus(stepIndex);
-  }, 500);
 
   setInterval(syncPlayButtons, 250);
 
