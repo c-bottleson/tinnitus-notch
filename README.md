@@ -28,6 +28,8 @@ The tailor-made notched music work by Okamoto et al. and the follow-up studies o
 - The chart now draws the real response of the filter being played.
 - Measured on the live page: about -116 dB at 3684 Hz, more than 20 dB of cut from 2650 to 5150 Hz, and at most +0.06 dB anywhere else. Nick confirmed it on his phone.
 
-### Open question
+### Why not wider
 
-Nick's goal is to cover his whole ringing range. The old 5-slice span ran from about 1550 to 8760 Hz, which is wider than the current one-octave notch. Widening the notch is a possible next step. It has not been done.
+The notch has to stay narrow and sit right next to the ringing. The idea behind the Okamoto approach is lateral inhibition. The ringing comes from an overexcited area of the hearing system. The notch gives that area no sound, while its neighbors just outside the notch keep getting sound. When the neighbors are active, they calm the ringing area. A notch that is too wide silences the neighbors too, so it stops working.
+
+Decision (Nov 2, 2026): keep the fixed one-octave notch. The old stepping across 5 half-octave slices (about 1550 to 8760 Hz in total) is not coming back, for the same reason.
